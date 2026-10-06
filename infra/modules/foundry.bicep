@@ -36,9 +36,11 @@ resource project 'Microsoft.CognitiveServices/accounts/projects@2025-06-01' = {
 
 // Deployments must be created serially on the same account.
 @batchSize(1)
+// The account serialises child operations: project -> deployments (one by one) -> diagnostics.
 resource deployments 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = [for m in models: {
   parent: account
   name: m.name
+  dependsOn: [project]
   sku: {
     name: m.sku
     capacity: m.capacity
@@ -55,6 +57,7 @@ resource deployments 'Microsoft.CognitiveServices/accounts/deployments@2025-06-0
 resource diag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
   name: 'to-log-analytics'
   scope: account
+  dependsOn: [deployments]
   properties: {
     workspaceId: workspaceId
     logs: [
