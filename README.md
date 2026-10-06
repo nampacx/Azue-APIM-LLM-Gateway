@@ -1,11 +1,19 @@
-# HEIMDAL – Azure API Management as an LLM & Agent Gateway
+# 🌈 HEIMDAL – Azure API Management as an LLM & Agent Gateway
 
-> *"I see everything."* – Heimdall, guardian of the Bifrost
+> 👁️ *"I see everything."* – Heimdall, guardian of the Bifrost
 
 A demo showcase of **Azure API Management (APIM) as an AI gateway**: one endpoint for every model and agent tool, with
-**per-user token accounting**, a **configurable model router** (prompt length / prompt complexity), and **MCP** exposure.
-Models run in **Microsoft Foundry**, infrastructure is **Bicep** in **Sweden Central**, custom code is **Python only**.
+
+- 👤 **per-user token accounting**
+- 🔀 a **configurable model router** (prompt length / prompt complexity)
+- 🔨 **per-user token limits** (429 for one hero only)
+- 🛡️ **MCP** exposure of Azure Function tools
+- 🤖 **agents** (Foundry Agent Service, Agent Framework) running through the same gateway
+
+Models run in **Microsoft Foundry** ☁️, infrastructure is **Bicep** 🦾 in **Sweden Central** 🇸🇪, custom code is **Python only** 🐍.
 No private networking (demo).
+
+📚 **Docs:** [📖 story.md](story.md) – the notebooks as a story · [🌈 docs/apim-definition.md](docs/apim-definition.md) – what is set up in APIM · [🔍 docs/apim-integration.md](docs/apim-integration.md) – how it works
 
 ```mermaid
 flowchart LR
@@ -32,7 +40,7 @@ flowchart LR
   classDef c fill:#eef;classDef p fill:#fed
 ```
 
-## What's inside
+## 📦 What's inside
 
 | Path | Purpose |
 |---|---|
@@ -42,14 +50,16 @@ flowchart LR
 | `src/shield-mcp/` | Python Azure Function (MCP extension) with MCU tools |
 | `azure.yaml`, `infra/azd/` | `azd up` entry point (subscription-scope wrapper + postdeploy hook `scripts/azd_hook.py`) |
 | `scripts/deploy.py`, `teardown.py` | Python wrappers around `az` (alternative to azd); write `.env` for the notebooks |
-| `notebooks/` | `00`–`08` demos (below) |
+| `infra/workbooks/` | Azure Monitor workbook: token usage per user / model per user |
+| `docs/` | [APIM definition](docs/apim-definition.md) and [integration deep dive](docs/apim-integration.md) |
+| `notebooks/` | `00`–`08` demos (below), story in [story.md](story.md) |
 
-### Naming (MCU theme)
+### 🦸 Naming (MCU theme)
 `rg-heimdal-asgard-swc` · `apim-heimdal-bifrost-*` · `fdry-heimdal-asgard-*` / `proj-heimdal-avengers` · `*-allseeing-*` (monitoring) ·
 `func-heimdal-shield-mcp-*` · products `avengers-initiative` / `infinity-gauntlet` · users `thor, loki, hulk, black-widow, tony-stark` ·
 tiers `pym` / `stark` / `thanos`.
 
-## Deploy
+## 🚀 Deploy
 
 Prereqs: Azure CLI (`az login`), Python 3.11+, permission to create APIM/Foundry/Function resources and role assignments, quota for the models.
 
@@ -63,12 +73,12 @@ python scripts/deploy.py --email you@contoso.com       # ~20-40 min (APIM), writ
 > MAI-Thinking-1 is served on `/mai/v1` (not `/openai/v1`) and needs `max_completion_tokens`; the router handles both via the `mai-deployments` named value. Its default quota tier can be 0 TPM – request quota if deployment fails.
 > Edit `models` / `tierModels` in `infra/main.bicepparam` (and the defaults in `infra/main.bicep` for azd) to use other deployments.
 
-#### MAI-Thinking-1 quota (optional top tier)
+#### 🧠 MAI-Thinking-1 quota (optional top tier)
 `MAI-Thinking-1` has **0 default quota**, so it is **off by default**: the `thanos` tier falls back to `gpt-6.1-sol`.
 1. Request quota: Foundry portal → **Manage → Quota** → pick the model/region (Sweden Central, GlobalStandard) → **Request quota**, or use the [quota request form](https://aka.ms/oai/stuquotarequest). Needs Owner/Contributor on the subscription; approval can take days, and allow ~15 min to propagate.
 2. Once approved, enable it: `export HEIMDAL_ENABLE_MAI=true` (scripts) or `azd env set HEIMDAL_ENABLE_MAI true`, then redeploy. The router then maps `thanos` → `mai-thinking-1` automatically.
 
-### Or deploy with `azd` (Azure Developer CLI)
+### ⚡ Or deploy with `azd` (Azure Developer CLI)
 
 ```bash
 azd auth login
@@ -80,23 +90,25 @@ azd up        # provisions infra/azd -> infra/main.bicep, deploys src/shield-mcp
 
 `azd down --purge` removes everything. `azd` creates the resource group `rg-heimdal-asgard-<env>`.
 
-Teardown (non-azd): `python scripts/teardown.py`.
+🧹 Teardown (non-azd): `python scripts/teardown.py`.
 
-## Demo flow (notebooks)
+## 🎬 Demo flow (notebooks)
+
+The full narrative is in [story.md](story.md).
 
 | # | Notebook | Shows |
 |---|---|---|
-| 00 | `00_setup_asgard` | Architecture, deploy, env check |
-| 01 | `01_bifrost_basic_call` | OpenAI-compatible gateway call, routing headers |
-| 02 | `02_all_seeing_eye_usage` | **Token usage per user** (custom metrics + LLM gateway logs, KQL) |
-| 03 | `03_router_prompt_length` | Router by **prompt length**, client overrides |
-| 04 | `04_router_complexity` | Router by **prompt complexity** – heuristic vs LLM classifier, live reconfig |
-| 05 | `05_mjolnir_token_limits` | Per-user TPM limits, 429 for one user only |
-| 06 | `06_shield_mcp_via_bifrost` | **MCP** server (Azure Function) governed by APIM |
-| 07 | `07_foundry_agent_via_bifrost` | **Foundry Agent Service** using the gateway as its model |
-| 08 | `08_agent_framework_via_bifrost` | **Agent Framework** agent: LLM + MCP tools, both via APIM |
+| 00 ⚡ | `00_setup_asgard` | Architecture, deploy, env check |
+| 01 🌈 | `01_bifrost_basic_call` | OpenAI-compatible gateway call, routing headers |
+| 02 👁️ | `02_all_seeing_eye_usage` | **Token usage per user** (custom metrics + LLM gateway logs, KQL) |
+| 03 📏 | `03_router_prompt_length` | Router by **prompt length**, client overrides |
+| 04 🧠 | `04_router_complexity` | Router by **prompt complexity** – heuristic vs LLM classifier, live reconfig |
+| 05 🔨 | `05_mjolnir_token_limits` | Per-user TPM limits, 429 for one user only |
+| 06 🛡️ | `06_shield_mcp_via_bifrost` | **MCP** server (Azure Function) governed by APIM |
+| 07 🤖 | `07_foundry_agent_via_bifrost` | **Foundry Agent Service** using the gateway as its model |
+| 08 🦸 | `08_agent_framework_via_bifrost` | **Agent Framework** agent: LLM + MCP tools, both via APIM |
 
-## Router configuration
+## 🎛️ Router configuration
 
 APIM **named values** (change in portal, `set_router(...)` in notebooks, or Bicep param `router`):
 
@@ -109,11 +121,13 @@ APIM **named values** (change in portal, `set_router(...)` in notebooks, or Bice
 | `model-tier-pym/stark/thanos`, `model-classifier` | deployment names | tier → model mapping |
 | `tpm-standard`, `tpm-premium` | e.g. `5000` | tokens per minute per user by product |
 
+Full list of what is defined in APIM: [docs/apim-definition.md](docs/apim-definition.md).
+
 Clients may also force `model="tier-thanos"` or a concrete deployment name; `model="heimdal-auto"` (or omitted) routes automatically.
 
-## Known notes / caveats
-- **Token metrics** require *Custom metrics with dimensions* on the App Insights resource (Usage & estimated costs → Custom metrics → With dimensions; usually default for new workspace-based resources). For streaming, send `stream_options={"include_usage": true}`.
-- Logs/metrics lag a few minutes. The LLM logs table (`ApiManagementGatewayLlmLog`) gives exact per-request tokens and model.
-- MCP is a plain HTTP API in APIM (streamable HTTP forwarded unbuffered; the preview `type: mcp` API returned 500 here). The Function MCP extension needs the `mcp_extension` system key; `deploy.py` injects it into the `shield-mcp-key` named value after code publish.
-- Foundry connection (notebook 07) and Agent Framework (notebook 08) use preview SDK/APIs – adjust to current docs if signatures changed.
-- This is a demo: public endpoints, subscription keys, no VNet. Harden (Entra/JWT auth, private endpoints, Key Vault named values) for real use.
+## ⚠️ Known notes / caveats
+- 📊 **Token metrics** (dimensions `User`, `Model`, `Tier`, `Agent` via the `x-agent` header, `API ID`) require *Custom metrics with dimensions* on the App Insights resource (Usage & estimated costs → Custom metrics → With dimensions; usually default for new workspace-based resources). For streaming, send `stream_options={"include_usage": true}`.
+- ⏱️ Logs/metrics lag a few minutes. The LLM logs table (`ApiManagementGatewayLlmLog`) gives exact per-request tokens and model.
+- 🔌 MCP is a plain HTTP API in APIM (streamable HTTP forwarded unbuffered; the preview `type: mcp` API returned 500 here). The Function MCP extension needs the `mcp_extension` system key; `deploy.py` injects it into the `shield-mcp-key` named value after code publish.
+- 🧪 Foundry connection (notebook 07) and Agent Framework (notebook 08) use preview SDK/APIs – adjust to current docs if signatures changed.
+- 🔓 This is a demo: public endpoints, subscription keys, no VNet. Harden (Entra/JWT auth, private endpoints, Key Vault named values) for real use.
