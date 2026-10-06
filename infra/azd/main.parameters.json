@@ -3,7 +3,7 @@
   "contentVersion": "1.0.0.0",
   "parameters": {
     "environmentName": { "value": "${AZURE_ENV_NAME}" },
-    "location": { "value": "${AZURE_LOCATION=swedencentral}" },
+    "location": { "value": "${AZURE_LOCATION}" },
     "publisherEmail": { "value": "${HEIMDAL_PUBLISHER_EMAIL}" },
     "enableMai": { "value": "${HEIMDAL_ENABLE_MAI=false}" }
   }

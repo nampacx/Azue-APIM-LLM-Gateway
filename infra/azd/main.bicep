@@ -6,8 +6,8 @@ targetScope = 'subscription'
 @description('azd environment name, e.g. "heimdal-dev".')
 param environmentName string
 
-@description('Azure region. Sweden Central for model availability.')
-param location string = 'swedencentral'
+@description('Azure region (also the subscription-level deployment location). Use swedencentral for model availability.')
+param location string
 
 @description('Publisher e-mail for APIM.')
 param publisherEmail string

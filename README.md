@@ -73,7 +73,7 @@ python scripts/deploy.py --email you@contoso.com       # ~20-40 min (APIM), writ
 ```bash
 azd auth login
 azd env new heimdal-dev
-azd env set AZURE_LOCATION swedencentral
+azd env set AZURE_LOCATION swedencentral   # required: azd uses it as the deployment location
 azd env set HEIMDAL_PUBLISHER_EMAIL you@contoso.com
 azd up        # provisions infra/azd -> infra/main.bicep, deploys src/shield-mcp, postdeploy hook wires the MCP key + writes .env
 ```
