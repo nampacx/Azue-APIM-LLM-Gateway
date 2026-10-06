@@ -59,8 +59,9 @@ python scripts/deploy.py --check-models                # are the models in swede
 python scripts/deploy.py --email you@contoso.com       # ~20-40 min (APIM), writes .env
 ```
 
-> **Models**: `main.bicepparam` is pre-filled with `gpt-6-luna`, `gpt-6-sol` and `MAI-Thinking-1` (versions/formats are placeholders – verify with `--check-models`
-> or in the Foundry portal and adjust). Change the `models` / `tierModels` params to use any other deployments.
+> **Models** (verified against [Models sold directly by Azure](https://learn.microsoft.com/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure)): `gpt-6-luna` and `gpt-6-sol` version `2026-09-22`, `MAI-Thinking-1` (preview, format `Microsoft`) version `2026-06-01`, all `GlobalStandard` in Sweden Central.
+> MAI-Thinking-1 is served on `/mai/v1` (not `/openai/v1`) and needs `max_completion_tokens`; the router handles both via the `mai-deployments` named value. Its default quota tier can be 0 TPM – request quota if deployment fails.
+> Edit `models` / `tierModels` in `infra/main.bicepparam` (and the defaults in `infra/main.bicep` for azd) to use other deployments.
 
 ### Or deploy with `azd` (Azure Developer CLI)
 

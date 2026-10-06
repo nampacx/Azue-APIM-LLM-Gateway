@@ -13,6 +13,7 @@
         length-threshold-tokens  est. prompt tokens (chars/4) for tier-stark; x4 for tier-thanos
         complexity-threshold     heuristic score for tier-stark; x2 for tier-thanos
         model-tier-pym|stark|thanos, model-classifier
+        mai-deployments          comma list of deployments served via /mai/v1 (MAI-Thinking-1)
   4. Rewrite "model" in the body, call Foundry with the gateway's managed identity
   5. Emit per-user token metrics (the All-Seeing Eye) and expose routing decisions as headers
 
@@ -185,12 +186,18 @@
     }" />
 
     <!-- 4. Call Foundry with the gateway identity, deployment chosen via body.model -->
+    <set-variable name="isMai" value="@(((string)context.Variables[&quot;routedModel&quot;]).Length &gt; 0 &amp;&amp; (&quot;,{{mai-deployments}},&quot;).ToLowerInvariant().Contains(&quot;,&quot; + ((string)context.Variables[&quot;routedModel&quot;]).ToLowerInvariant() + &quot;,&quot;))" />
     <set-body>@{
         var b = (JObject)context.Variables["body"];
         b["model"] = (string)context.Variables["routedModel"];
+        // MAI models only accept max_completion_tokens
+        if ((bool)context.Variables["isMai"] &amp;&amp; b["max_tokens"] != null) {
+            b["max_completion_tokens"] = b["max_tokens"];
+            b.Remove("max_tokens");
+        }
         return b.ToString();
     }</set-body>
-    <set-backend-service backend-id="asgard-foundry" />
+    <set-backend-service backend-id="@((bool)context.Variables[&quot;isMai&quot;] ? &quot;asgard-foundry-mai&quot; : &quot;asgard-foundry&quot;)" />
     <authentication-managed-identity resource="https://cognitiveservices.azure.com" />
     <!-- never forward the client's APIM key to the backend -->
     <set-header name="api-key" exists-action="delete" />

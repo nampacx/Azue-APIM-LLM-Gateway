@@ -53,10 +53,17 @@ def check_models(location: str) -> None:
         print(e)
         print("\nCould not list models (missing permission?). Verify in the Foundry portal instead.")
         return
-    index = {(m["model"]["format"], m["model"]["name"]): m["model"]["version"] for m in available}
+    index: dict[str, set[str]] = {}
+    for m in available:
+        index.setdefault(m["model"]["name"].lower(), set()).add(m["model"]["version"])
     for m in declared_models():
-        hit = [v for (f, n), v in index.items() if n.lower() == m["model"].lower()]
-        status = f"OK (versions: {', '.join(sorted(set(hit)))})" if hit else "NOT FOUND in this region/subscription"
+        versions = index.get(m["model"].lower(), set())
+        if not versions:
+            status = "NOT FOUND in this region/subscription"
+        elif m["version"] in versions:
+            status = f"OK (version {m['version']})"
+        else:
+            status = f"VERSION MISMATCH: declared {m['version']}, available {', '.join(sorted(versions))}"
         print(f"  {m['name']:<18} {m['model']:<18} {status}")
 
 

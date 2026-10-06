@@ -25,9 +25,9 @@ param apimSku string = 'StandardV2'
 
 @description('Model deployments in Foundry. Each: { name, model, version, format, sku, capacity }.')
 param models array = [
-  { name: 'gpt-6-luna', model: 'gpt-6-luna', version: '1', format: 'OpenAI', sku: 'GlobalStandard', capacity: 100 }
-  { name: 'gpt-6-sol', model: 'gpt-6-sol', version: '1', format: 'OpenAI', sku: 'GlobalStandard', capacity: 50 }
-  { name: 'mai-thinking-1', model: 'MAI-Thinking-1', version: '1', format: 'Microsoft', sku: 'GlobalStandard', capacity: 20 }
+  { name: 'gpt-6-luna', model: 'gpt-6-luna', version: '2026-09-22', format: 'OpenAI', sku: 'GlobalStandard', capacity: 100 }
+  { name: 'gpt-6-sol', model: 'gpt-6-sol', version: '2026-09-22', format: 'OpenAI', sku: 'GlobalStandard', capacity: 50 }
+  { name: 'mai-thinking-1', model: 'MAI-Thinking-1', version: '2026-06-01', format: 'Microsoft', sku: 'GlobalStandard', capacity: 20 }
 ]
 
 @description('Router tier -> deployment name. pym = small/short, stark = mid, thanos = large/reasoning.')
@@ -103,6 +103,7 @@ module apim 'modules/apim.bicep' = {
     appInsightsKey: monitoring.outputs.appInsightsKey
     workspaceId: monitoring.outputs.workspaceId
     foundryEndpoint: foundry.outputs.endpoint
+    maiDeployments: join(map(filter(models, m => m.format == 'Microsoft'), m => m.name), ',')
     tierModels: tierModels
     classifierModel: classifierModel
     router: router

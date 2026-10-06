@@ -5,13 +5,15 @@ param publisherEmail = readEnvironmentVariable('HEIMDAL_PUBLISHER_EMAIL', 'heimd
 param apimSku = 'StandardV2'
 
 // Models hosted in Microsoft Foundry. Edit freely: name = deployment name used by the router.
-// NOTE: model names/versions/formats below must exist in swedencentral for your subscription.
-//       `python scripts/deploy.py --check-models` lists what is available and flags mismatches.
+// Versions per https://learn.microsoft.com/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure
+// (all GlobalStandard, available in swedencentral). MAI-Thinking-1 is a preview model with format 'Microsoft';
+// its default quota tier can be 0 TPM – request quota if the deployment fails.
+// `python scripts/deploy.py --check-models` compares these with what your subscription offers.
 param models = [
   {
     name: 'gpt-6-luna'
     model: 'gpt-6-luna'
-    version: '1'
+    version: '2026-09-22'
     format: 'OpenAI'
     sku: 'GlobalStandard'
     capacity: 100
@@ -19,7 +21,7 @@ param models = [
   {
     name: 'gpt-6-sol'
     model: 'gpt-6-sol'
-    version: '1'
+    version: '2026-09-22'
     format: 'OpenAI'
     sku: 'GlobalStandard'
     capacity: 50
@@ -27,7 +29,7 @@ param models = [
   {
     name: 'mai-thinking-1'
     model: 'MAI-Thinking-1'
-    version: '1'
+    version: '2026-06-01'
     format: 'Microsoft'
     sku: 'GlobalStandard'
     capacity: 20

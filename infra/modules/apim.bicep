@@ -9,6 +9,8 @@ param appInsightsId string
 param appInsightsKey string
 param workspaceId string
 param foundryEndpoint string
+@description('Comma-separated deployment names served by the MAI surface (/mai/v1).')
+param maiDeployments string
 param tierModels object
 param classifierModel string
 param router object
@@ -110,6 +112,17 @@ resource foundryBackend 'Microsoft.ApiManagement/service/backends@2025-09-01-pre
   }
 }
 
+// MAI models (e.g. MAI-Thinking-1) are served on /mai/v1 of the Foundry resource endpoint.
+resource maiBackend 'Microsoft.ApiManagement/service/backends@2025-09-01-preview' = {
+  parent: apim
+  name: 'asgard-foundry-mai'
+  properties: {
+    protocol: 'http'
+    url: '${replace(foundryEndpoint, 'cognitiveservices.azure.com', 'services.ai.azure.com')}/mai/v1'
+    description: 'Foundry MAI models (managed identity)'
+  }
+}
+
 // ---- Router configuration (runtime-tunable named values) ----------------
 var namedValues = [
   { name: 'router-mode', value: router.mode, desc: 'length | complexity | hybrid' }
@@ -119,6 +132,7 @@ var namedValues = [
   { name: 'model-tier-pym', value: tierModels.pym, desc: 'Deployment for small/simple prompts' }
   { name: 'model-tier-stark', value: tierModels.stark, desc: 'Deployment for medium prompts' }
   { name: 'model-tier-thanos', value: tierModels.thanos, desc: 'Deployment for large/complex/reasoning prompts' }
+  { name: 'mai-deployments', value: maiDeployments, desc: 'Deployments served via /mai/v1 (comma-separated)' }
   { name: 'model-classifier', value: classifierModel, desc: 'Deployment used for llm complexity classification' }
   { name: 'foundry-openai-base', value: '${replace(foundryEndpoint, 'cognitiveservices.azure.com', 'openai.azure.com')}/openai/v1', desc: 'Foundry OpenAI v1 base URL' }
   { name: 'tpm-standard', value: tokenLimits.standard, desc: 'Tokens/minute for avengers-initiative' }
