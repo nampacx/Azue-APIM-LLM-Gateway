@@ -98,9 +98,10 @@ resource mcpApi 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
     serviceUrl: mcpBackendUrl
     mcpProperties: {
       transportType: 'streamable'
-      endpoints: [
-        { name: 'message', uriTemplate: '/runtime/webhooks/mcp' }
-      ]
+      // the API expects an object keyed by endpoint name (the docs show an array)
+      endpoints: {
+        message: { uriTemplate: '/runtime/webhooks/mcp' }
+      }
     }
   }
 }

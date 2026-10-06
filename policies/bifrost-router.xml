@@ -120,7 +120,6 @@
           <set-header name="Content-Type" exists-action="override">
             <value>application/json</value>
           </set-header>
-          <authentication-managed-identity resource="https://cognitiveservices.azure.com" />
           <set-body>@{
               string text = (string)context.Variables["promptText"];
               if (text.Length > 4000) { text = text.Substring(0, 4000); }
@@ -136,6 +135,7 @@
                           new JProperty("content", text)))));
               return req.ToString();
           }</set-body>
+          <authentication-managed-identity resource="https://cognitiveservices.azure.com" />
         </send-request>
         <set-variable name="llmTier" value="@{
             try {
