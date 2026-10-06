@@ -110,7 +110,7 @@ module apim 'modules/apim.bicep' = {
     appInsightsKey: monitoring.outputs.appInsightsKey
     workspaceId: monitoring.outputs.workspaceId
     foundryEndpoint: foundry.outputs.endpoint
-    maiDeployments: join(map(filter(activeModels, m => m.format == 'Microsoft'), m => m.name), ',')
+    maiDeployments: enableMai ? join(map(filter(activeModels, m => m.format == 'Microsoft'), m => m.name), ',') : 'none' // named values cannot be empty
     tierModels: activeTierModels
     classifierModel: classifierModel
     router: router

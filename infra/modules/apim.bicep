@@ -76,10 +76,9 @@ resource azMonDiag 'Microsoft.ApiManagement/service/diagnostics@2025-09-01-previ
     sampling: { samplingType: 'fixed', percentage: 100 }
     logClientIp: true
     // Per-request token usage (prompt/completion/total + model) lands in ApiManagementGatewayLlmLog.
+    // (requests/responses blocks omitted on purpose: their only option is 'all', which would log prompt contents.)
     largeLanguageModel: {
       logs: 'enabled'
-      requests: { messages: 'none', maxSizeInBytes: 1024 }
-      responses: { messages: 'none', maxSizeInBytes: 1024 }
     }
   }
 }
