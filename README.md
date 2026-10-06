@@ -63,6 +63,11 @@ python scripts/deploy.py --email you@contoso.com       # ~20-40 min (APIM), writ
 > MAI-Thinking-1 is served on `/mai/v1` (not `/openai/v1`) and needs `max_completion_tokens`; the router handles both via the `mai-deployments` named value. Its default quota tier can be 0 TPM – request quota if deployment fails.
 > Edit `models` / `tierModels` in `infra/main.bicepparam` (and the defaults in `infra/main.bicep` for azd) to use other deployments.
 
+#### MAI-Thinking-1 quota (optional top tier)
+`MAI-Thinking-1` has **0 default quota**, so it is **off by default**: the `thanos` tier falls back to `gpt-6.1-sol`.
+1. Request quota: Foundry portal → **Manage → Quota** → pick the model/region (Sweden Central, GlobalStandard) → **Request quota**, or use the [quota request form](https://aka.ms/oai/stuquotarequest). Needs Owner/Contributor on the subscription; approval can take days, and allow ~15 min to propagate.
+2. Once approved, enable it: `export HEIMDAL_ENABLE_MAI=true` (scripts) or `azd env set HEIMDAL_ENABLE_MAI true`, then redeploy. The router then maps `thanos` → `mai-thinking-1` automatically.
+
 ### Or deploy with `azd` (Azure Developer CLI)
 
 ```bash

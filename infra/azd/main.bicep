@@ -12,6 +12,9 @@ param location string = 'swedencentral'
 @description('Publisher e-mail for APIM.')
 param publisherEmail string
 
+@description('"true" to deploy MAI-Thinking-1 (needs GlobalStandard quota).')
+param enableMai string = 'false'
+
 resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = {
   name: 'rg-heimdal-asgard-${environmentName}'
   location: location
@@ -27,6 +30,7 @@ module heimdal '../main.bicep' = {
   params: {
     location: location
     publisherEmail: publisherEmail
+    enableMai: toLower(enableMai) == 'true'
   }
 }
 

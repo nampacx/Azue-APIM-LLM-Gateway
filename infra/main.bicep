@@ -23,10 +23,14 @@ param publisherName string = 'Asgard Gateway Ops'
 @allowed(['BasicV2', 'StandardV2', 'Developer', 'Premium'])
 param apimSku string = 'StandardV2'
 
+@description('Deploy MAI-Thinking-1 (preview). Needs GlobalStandard quota, which defaults to 0 – request it first, then set true.')
+param enableMai bool = false
+
 @description('Model deployments in Foundry. Each: { name, model, version, format, sku, capacity }.')
 param models array = [
   { name: 'gpt-6-luna', model: 'gpt-6-luna', version: '2026-09-22', format: 'OpenAI', sku: 'GlobalStandard', capacity: 100 }
   { name: 'gpt-6-sol', model: 'gpt-6-sol', version: '2026-09-22', format: 'OpenAI', sku: 'GlobalStandard', capacity: 50 }
+  { name: 'gpt-6-1-sol', model: 'gpt-6.1-sol', version: '2026-09-29', format: 'OpenAI', sku: 'GlobalStandard', capacity: 30 }
   { name: 'mai-thinking-1', model: 'MAI-Thinking-1', version: '2026-06-01', format: 'Microsoft', sku: 'GlobalStandard', capacity: 20 }
 ]
 
@@ -34,7 +38,7 @@ param models array = [
 param tierModels object = {
   pym: 'gpt-6-luna'
   stark: 'gpt-6-sol'
-  thanos: 'mai-thinking-1'
+  thanos: 'gpt-6-1-sol' // replaced by mai-thinking-1 when enableMai = true
 }
 
 @description('Deployment used for the LLM-based complexity classifier.')
@@ -63,6 +67,9 @@ param demoUsers array = [
   { name: 'tony-stark', product: 'infinity-gauntlet' }
 ]
 
+var activeModels = enableMai ? models : filter(models, m => m.format != 'Microsoft')
+var activeTierModels = enableMai ? union(tierModels, { thanos: 'mai-thinking-1' }) : tierModels
+
 var tags = {
   project: 'heimdal'
   theme: 'mcu'
@@ -85,7 +92,7 @@ module foundry 'modules/foundry.bicep' = {
     location: location
     accountName: 'fdry-${prefix}-asgard-${suffix}'
     projectName: 'proj-${prefix}-avengers'
-    models: models
+    models: activeModels
     workspaceId: monitoring.outputs.workspaceId
     tags: tags
   }
@@ -103,8 +110,8 @@ module apim 'modules/apim.bicep' = {
     appInsightsKey: monitoring.outputs.appInsightsKey
     workspaceId: monitoring.outputs.workspaceId
     foundryEndpoint: foundry.outputs.endpoint
-    maiDeployments: join(map(filter(models, m => m.format == 'Microsoft'), m => m.name), ',')
-    tierModels: tierModels
+    maiDeployments: join(map(filter(activeModels, m => m.format == 'Microsoft'), m => m.name), ',')
+    tierModels: activeTierModels
     classifierModel: classifierModel
     router: router
     tokenLimits: tokenLimits
