@@ -24,13 +24,21 @@ param publisherName string = 'Asgard Gateway Ops'
 param apimSku string = 'StandardV2'
 
 @description('Model deployments in Foundry. Each: { name, model, version, format, sku, capacity }.')
-param models array
+param models array = [
+  { name: 'gpt-6-luna', model: 'gpt-6-luna', version: '1', format: 'OpenAI', sku: 'GlobalStandard', capacity: 100 }
+  { name: 'gpt-6-sol', model: 'gpt-6-sol', version: '1', format: 'OpenAI', sku: 'GlobalStandard', capacity: 50 }
+  { name: 'mai-thinking-1', model: 'MAI-Thinking-1', version: '1', format: 'Microsoft', sku: 'GlobalStandard', capacity: 20 }
+]
 
 @description('Router tier -> deployment name. pym = small/short, stark = mid, thanos = large/reasoning.')
-param tierModels object
+param tierModels object = {
+  pym: 'gpt-6-luna'
+  stark: 'gpt-6-sol'
+  thanos: 'mai-thinking-1'
+}
 
 @description('Deployment used for the LLM-based complexity classifier.')
-param classifierModel string
+param classifierModel string = 'gpt-6-luna'
 
 @description('Router settings (changeable at runtime via APIM named values).')
 param router object = {

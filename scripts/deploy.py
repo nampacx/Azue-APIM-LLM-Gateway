@@ -134,6 +134,20 @@ def write_env(args, out: dict) -> None:
     print(f"Wrote {ROOT / '.env'} (git-ignored). Open notebooks/00_setup_asgard.ipynb next.")
 
 
+def azd_hook() -> None:
+    """Post-deploy hook for `azd up`: read azd environment variables, wire the MCP key and write .env."""
+    e = os.environ
+    args = argparse.Namespace(resource_group=e["AZURE_RESOURCE_GROUP"], location=e.get("AZURE_LOCATION", "swedencentral"))
+    out = {
+        "apimName": e["HEIMDAL_APIM_NAME"], "gatewayUrl": e["HEIMDAL_GATEWAY_URL"],
+        "foundryAccountName": e["HEIMDAL_FOUNDRY_ACCOUNT"], "foundryProjectName": e["HEIMDAL_FOUNDRY_PROJECT"],
+        "functionAppName": e["HEIMDAL_FUNCTION_APP"], "appInsightsName": e["HEIMDAL_APPINSIGHTS"],
+        "logAnalyticsWorkspaceId": e["HEIMDAL_LOG_WORKSPACE_ID"],
+    }
+    wire_mcp_key(args.resource_group, out["functionAppName"], out["apimName"])
+    write_env(args, out)
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description="Deploy HEIMDAL (APIM LLM/agent gateway) to Azure")
     p.add_argument("--resource-group", default="rg-heimdal-asgard-swc")

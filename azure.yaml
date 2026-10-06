@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+name: heimdal
+metadata:
+  template: heimdal-apim-llm-gateway
+
+infra:
+  provider: bicep
+  path: infra/azd
+  module: main
+
+services:
+  shield-mcp:            # S.H.I.E.L.D. MCP server (Python Azure Function, Flex Consumption)
+    project: ./src/shield-mcp
+    language: python
+    host: function
+
+hooks:
+  predeploy:             # nothing to do; kept for symmetry
+    posix: { shell: sh, run: 'echo "Deploying S.H.I.E.L.D. MCP function..."' }
+    windows: { shell: pwsh, run: 'Write-Host "Deploying S.H.I.E.L.D. MCP function..."' }
+  postdeploy:            # wire function key into APIM + write .env for the notebooks
+    posix: { shell: sh, run: 'python scripts/azd_hook.py' }
+    windows: { shell: pwsh, run: 'python scripts/azd_hook.py' }

@@ -40,7 +40,8 @@ flowchart LR
 | `policies/bifrost-router.xml` | The brain: token limit → model routing → managed-identity call → token metrics → `x-heimdal-*` headers |
 | `policies/shield-mcp.xml` | MCP rate limit + function key injection |
 | `src/shield-mcp/` | Python Azure Function (MCP extension) with MCU tools |
-| `scripts/deploy.py`, `teardown.py` | Python wrappers around `az`; write `.env` for the notebooks |
+| `azure.yaml`, `infra/azd/` | `azd up` entry point (subscription-scope wrapper + postdeploy hook `scripts/azd_hook.py`) |
+| `scripts/deploy.py`, `teardown.py` | Python wrappers around `az` (alternative to azd); write `.env` for the notebooks |
 | `notebooks/` | `00`–`08` demos (below) |
 
 ### Naming (MCU theme)
@@ -61,7 +62,19 @@ python scripts/deploy.py --email you@contoso.com       # ~20-40 min (APIM), writ
 > **Models**: `main.bicepparam` is pre-filled with `gpt-6-luna`, `gpt-6-sol` and `MAI-Thinking-1` (versions/formats are placeholders – verify with `--check-models`
 > or in the Foundry portal and adjust). Change the `models` / `tierModels` params to use any other deployments.
 
-Teardown: `python scripts/teardown.py`.
+### Or deploy with `azd` (Azure Developer CLI)
+
+```bash
+azd auth login
+azd env new heimdal-dev
+azd env set AZURE_LOCATION swedencentral
+azd env set HEIMDAL_PUBLISHER_EMAIL you@contoso.com
+azd up        # provisions infra/azd -> infra/main.bicep, deploys src/shield-mcp, postdeploy hook wires the MCP key + writes .env
+```
+
+`azd down --purge` removes everything. `azd` creates the resource group `rg-heimdal-asgard-<env>`.
+
+Teardown (non-azd): `python scripts/teardown.py`.
 
 ## Demo flow (notebooks)
 
