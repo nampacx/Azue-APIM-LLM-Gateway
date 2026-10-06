@@ -86,12 +86,21 @@ module monitoring 'modules/monitoring.bicep' = {
   }
 }
 
+module workbook 'modules/workbook.bicep' = {
+  name: 'workbook'
+  params: {
+    location: location
+    workspaceId: monitoring.outputs.workspaceId
+    tags: tags
+  }
+}
+
 module foundry 'modules/foundry.bicep' = {
   name: 'foundry'
   params: {
     location: location
     accountName: 'fdry-${prefix}-asgard-${suffix}'
-    projectName: 'proj-${prefix}-avengers'
+    projectName: 'proj-${prefix}-avengers-v2'
     models: activeModels
     workspaceId: monitoring.outputs.workspaceId
     tags: tags
@@ -158,3 +167,4 @@ output foundryEndpoint string = foundry.outputs.endpoint
 output functionAppName string = mcp.outputs.name
 output appInsightsName string = monitoring.outputs.appInsightsName
 output logAnalyticsWorkspaceId string = monitoring.outputs.workspaceCustomerId
+output tokenUsageWorkbookId string = workbook.outputs.workbookId

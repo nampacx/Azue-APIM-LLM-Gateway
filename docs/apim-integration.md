@@ -147,7 +147,7 @@ Configured in `apim.bicep`:
 | Piece | Purpose |
 |---|---|
 | Logger `heimdal-appinsights` + diagnostic with `metrics: true` | Enables custom metrics from `llm-emit-token-metric` into App Insights (`AppMetrics`) |
-| `llm-emit-token-metric` (policy) | Metrics `Prompt/Completion/Total Tokens` with dimensions **User, Model, Tier, Product, API ID** |
+| `llm-emit-token-metric` (policy) | Metrics `Prompt/Completion/Total Tokens` with dimensions **User, Model, Tier, Agent (from the `x-agent` request header), API ID** |
 | Logger `azuremonitor` + diagnostic with `largeLanguageModel.logs: enabled` | Per-request token usage and model into `ApiManagementGatewayLlmLog` |
 | Diagnostic setting `to-log-analytics` | Ships `GatewayLogs` and `GatewayLlmLogs` to the Log Analytics workspace |
 

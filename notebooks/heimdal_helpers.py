@@ -239,6 +239,15 @@ AppMetrics
 | order by User asc
 """
 
+# Same metrics, split by the Agent dimension (the x-agent request header; "none" when a client sends no tag).
+KQL_TOKENS_BY_AGENT_METRIC = """
+AppMetrics
+| where Name in ("Total Tokens", "Prompt Tokens", "Completion Tokens")
+| extend User = tostring(Properties["User"]), Agent = tostring(Properties["Agent"]), Model = tostring(Properties["Model"])
+| summarize Tokens = sum(Sum) by Agent, User, Model, Name
+| order by Agent asc
+"""
+
 # What metrics has the gateway emitted at all? (diagnostics if the query above is empty)
 KQL_METRIC_NAMES = """
 AppMetrics

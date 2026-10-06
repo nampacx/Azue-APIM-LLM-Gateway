@@ -1,0 +1,326 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 9,
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "tr",
+            "version": "KqlParameterItem/1.0",
+            "name": "TimeRange",
+            "label": "Time range",
+            "type": 4,
+            "isRequired": true,
+            "value": {
+              "durationMs": 86400000
+            },
+            "typeSettings": {
+              "selectableValues": [
+                {
+                  "durationMs": 3600000
+                },
+                {
+                  "durationMs": 14400000
+                },
+                {
+                  "durationMs": 86400000
+                },
+                {
+                  "durationMs": 172800000
+                },
+                {
+                  "durationMs": 604800000
+                },
+                {
+                  "durationMs": 2592000000
+                }
+              ],
+              "allowCustom": true
+            }
+          }
+        ]
+      },
+      "name": "parameters"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "## Heimdal LLM gateway: token usage\nSource: `llm-emit-token-metric` custom metrics (namespace `heimdal`, table `AppMetrics`) and the APIM LLM gateway log (`ApiManagementGatewayLlmLog`). Metrics and logs lag a few minutes."
+      },
+      "name": "intro"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "name": "tiles",
+        "query": "AppMetrics\n| where TimeGenerated {TimeRange:query}\n| where Name == \"Total Tokens\"\n| extend User = tostring(Properties[\"User\"]), Model = tostring(Properties[\"Model\"]), Tier = tostring(Properties[\"Tier\"]), Agent = tostring(Properties[\"Agent\"])\n| summarize [\"Total tokens\"]=tolong(sum(Sum)), Users=dcount(User), Models=dcount(Model), Agents=dcount(Agent)",
+        "size": 1,
+        "title": "Totals",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "__WORKSPACE_ID__"
+        ],
+        "visualization": "table"
+      },
+      "name": "tiles"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "### Token usage per user"
+      },
+      "name": "h1"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "name": "tokens-by-user",
+        "query": "AppMetrics\n| where TimeGenerated {TimeRange:query}\n| where Name == \"Total Tokens\"\n| extend User = tostring(Properties[\"User\"]), Model = tostring(Properties[\"Model\"]), Tier = tostring(Properties[\"Tier\"]), Agent = tostring(Properties[\"Agent\"])\n| summarize Tokens=tolong(sum(Sum)) by User\n| order by Tokens desc",
+        "size": 0,
+        "title": "Total tokens per user",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "__WORKSPACE_ID__"
+        ],
+        "visualization": "barchart"
+      },
+      "name": "tokens-by-user",
+      "customWidth": "50"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "name": "tokens-by-user-split",
+        "query": "AppMetrics\n| where TimeGenerated {TimeRange:query}\n| where Name in (\"Prompt Tokens\", \"Completion Tokens\")\n| extend User = tostring(Properties[\"User\"])\n| summarize Tokens=tolong(sum(Sum)) by User, Name\n| order by User asc",
+        "size": 0,
+        "title": "Prompt vs completion tokens per user",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "__WORKSPACE_ID__"
+        ],
+        "visualization": "barchart",
+        "chartSettings": {
+          "seriesLabelSettings": []
+        }
+      },
+      "name": "tokens-by-user-split",
+      "customWidth": "50"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "name": "tokens-over-time",
+        "query": "AppMetrics\n| where TimeGenerated {TimeRange:query}\n| where Name == \"Total Tokens\"\n| extend User = tostring(Properties[\"User\"]), Model = tostring(Properties[\"Model\"]), Tier = tostring(Properties[\"Tier\"]), Agent = tostring(Properties[\"Agent\"])\n| summarize Tokens=tolong(sum(Sum)) by bin(TimeGenerated, {TimeRange:grain}), User\n| order by TimeGenerated asc",
+        "size": 0,
+        "title": "Total tokens over time per user",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "__WORKSPACE_ID__"
+        ],
+        "visualization": "timechart"
+      },
+      "name": "tokens-over-time"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "### Models used by user"
+      },
+      "name": "h2"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "name": "user-model-matrix",
+        "query": "AppMetrics\n| where TimeGenerated {TimeRange:query}\n| where Name == \"Total Tokens\"\n| extend User = tostring(Properties[\"User\"]), Model = tostring(Properties[\"Model\"]), Tier = tostring(Properties[\"Tier\"]), Agent = tostring(Properties[\"Agent\"])\n| summarize Tokens=tolong(sum(Sum)) by User, Model\n| order by User asc, Tokens desc",
+        "size": 0,
+        "title": "Tokens per user and model",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "__WORKSPACE_ID__"
+        ],
+        "visualization": "barchart",
+        "chartSettings": {
+          "group": "Model",
+          "createOtherGroup": 0
+        }
+      },
+      "name": "user-model-matrix",
+      "customWidth": "50"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "name": "user-model-table",
+        "query": "AppMetrics\n| where TimeGenerated {TimeRange:query}\n| where Name == \"Total Tokens\"\n| extend User = tostring(Properties[\"User\"]), Model = tostring(Properties[\"Model\"]), Tier = tostring(Properties[\"Tier\"]), Agent = tostring(Properties[\"Agent\"])\n| summarize Tokens=tolong(sum(Sum)), Calls=count() by User, Model\n| order by User asc, Tokens desc",
+        "size": 0,
+        "title": "User x model breakdown (metrics)",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "__WORKSPACE_ID__"
+        ],
+        "visualization": "table",
+        "gridSettings": {
+          "sortBy": [
+            {
+              "itemKey": "Tokens",
+              "sortOrder": 2
+            }
+          ]
+        }
+      },
+      "name": "user-model-table",
+      "customWidth": "50"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "name": "model-share",
+        "query": "AppMetrics\n| where TimeGenerated {TimeRange:query}\n| where Name == \"Total Tokens\"\n| extend User = tostring(Properties[\"User\"]), Model = tostring(Properties[\"Model\"]), Tier = tostring(Properties[\"Tier\"]), Agent = tostring(Properties[\"Agent\"])\n| summarize Tokens=tolong(sum(Sum)) by Model\n| order by Tokens desc",
+        "size": 0,
+        "title": "Token share per model",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "__WORKSPACE_ID__"
+        ],
+        "visualization": "piechart"
+      },
+      "name": "model-share",
+      "customWidth": "50"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "name": "tier-user",
+        "query": "AppMetrics\n| where TimeGenerated {TimeRange:query}\n| where Name == \"Total Tokens\"\n| extend User = tostring(Properties[\"User\"]), Model = tostring(Properties[\"Model\"]), Tier = tostring(Properties[\"Tier\"]), Agent = tostring(Properties[\"Agent\"])\n| summarize Tokens=tolong(sum(Sum)) by User, Tier\n| order by User asc",
+        "size": 0,
+        "title": "Tokens per user and routing tier",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "__WORKSPACE_ID__"
+        ],
+        "visualization": "table"
+      },
+      "name": "tier-user",
+      "customWidth": "50"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "### Exact per-request usage (LLM gateway log)\nThe LLM log has no user column. It is joined to `ApiManagementGatewayLogs` on `CorrelationId`, and the APIM subscription name is the user."
+      },
+      "name": "h3"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "name": "llmlog",
+        "query": "ApiManagementGatewayLlmLog\n| where TimeGenerated {TimeRange:query}\n| join kind=inner (ApiManagementGatewayLogs | project CorrelationId, User = ApimSubscriptionId) on CorrelationId\n| summarize Requests=count(), Prompt=sum(PromptTokens), Completion=sum(CompletionTokens), Total=sum(TotalTokens) by User, ModelName\n| order by Total desc",
+        "size": 0,
+        "title": "Requests and tokens per user and model",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "__WORKSPACE_ID__"
+        ],
+        "visualization": "table",
+        "gridSettings": {
+          "sortBy": [
+            {
+              "itemKey": "Total",
+              "sortOrder": 2
+            }
+          ]
+        }
+      },
+      "name": "llmlog"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "### Per agent"
+      },
+      "name": "h4"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "name": "agent",
+        "query": "AppMetrics\n| where TimeGenerated {TimeRange:query}\n| where Name == \"Total Tokens\"\n| extend User = tostring(Properties[\"User\"]), Model = tostring(Properties[\"Model\"]), Tier = tostring(Properties[\"Tier\"]), Agent = tostring(Properties[\"Agent\"])\n| summarize Tokens=tolong(sum(Sum)) by Agent, User, Model\n| order by Tokens desc",
+        "size": 0,
+        "title": "Tokens per agent, user and model",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "__WORKSPACE_ID__"
+        ],
+        "visualization": "table"
+      },
+      "name": "agent"
+    }
+  ],
+  "fallbackResourceIds": [
+    "__WORKSPACE_ID__"
+  ],
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+}
