@@ -88,13 +88,33 @@ def kql(query: str, hours: int = 24) -> pd.DataFrame:
     return pd.DataFrame(table.rows, columns=table.columns)
 
 
+def kql_wait(query: str, hours: int = 3, timeout_min: int = 12, interval_s: int = 30) -> pd.DataFrame:
+    """Re-run a query until it returns rows (App Insights / Log Analytics ingestion lags by a few minutes)."""
+    import time
+
+    deadline = time.time() + timeout_min * 60
+    while True:
+        df = kql(query, hours=hours)
+        if len(df) or time.time() > deadline:
+            return df
+        print(f"no rows yet – waiting {interval_s}s for ingestion...")
+        time.sleep(interval_s)
+
+
+# Per-user tokens from the llm-emit-token-metric custom metrics (pivot done in pandas so empty results stay readable).
 KQL_TOKENS_BY_USER_METRIC = """
 AppMetrics
 | where Name in ("Total Tokens", "Prompt Tokens", "Completion Tokens")
 | extend User = tostring(Properties["User"]), Model = tostring(Properties["Model"])
-| summarize Tokens = sum(Sum) by User, Name
-| evaluate pivot(Name, sum(Tokens))
+| summarize Tokens = sum(Sum) by User, Model, Name
 | order by User asc
+"""
+
+# What metrics has the gateway emitted at all? (diagnostics if the query above is empty)
+KQL_METRIC_NAMES = """
+AppMetrics
+| summarize Samples = count(), LastSeen = max(TimeGenerated) by Name
+| order by LastSeen desc
 """
 
 KQL_TOKENS_BY_USER_LLMLOG = """
