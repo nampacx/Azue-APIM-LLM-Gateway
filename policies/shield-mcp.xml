@@ -1,0 +1,26 @@
+<!--
+  S.H.I.E.L.D. MCP policy: per-caller rate limit + backend function key.
+  Do not touch context.Response.Body here – it would buffer the MCP stream.
+-->
+<policies>
+  <inbound>
+    <base />
+    <rate-limit-by-key calls="30" renewal-period="60"
+        counter-key="@(context.Subscription?.Id ?? context.Request.IpAddress)" />
+    <!-- Functions MCP extension requires the mcp_extension system key -->
+    <set-header name="x-functions-key" exists-action="override">
+      <value>{{shield-mcp-key}}</value>
+    </set-header>
+    <set-header name="api-key" exists-action="delete" />
+    <set-header name="Ocp-Apim-Subscription-Key" exists-action="delete" />
+  </inbound>
+  <backend>
+    <forward-request buffer-response="false" />
+  </backend>
+  <outbound>
+    <base />
+  </outbound>
+  <on-error>
+    <base />
+  </on-error>
+</policies>

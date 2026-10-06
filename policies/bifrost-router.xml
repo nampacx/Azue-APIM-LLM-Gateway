@@ -1,0 +1,231 @@
+<!--
+  BIFROST ROUTER  –  HEIMDAL's all-seeing LLM gateway policy
+
+  1. Identify the caller (APIM subscription = demo user: thor, loki, tony-stark ...)
+  2. Enforce a per-user token-per-minute limit            (Mjolnir limits)
+  3. Pick a model tier from the prompt:
+        tier-pym    small / short / simple
+        tier-stark  medium
+        tier-thanos large / complex / reasoning
+     Controlled by named values (change at runtime, no redeploy):
+        router-mode              length | complexity | hybrid
+        complexity-mode          heuristic | llm
+        length-threshold-tokens  est. prompt tokens (chars/4) for tier-stark; x4 for tier-thanos
+        complexity-threshold     heuristic score for tier-stark; x2 for tier-thanos
+        model-tier-pym|stark|thanos, model-classifier
+  4. Rewrite "model" in the body, call Foundry with the gateway's managed identity
+  5. Emit per-user token metrics (the All-Seeing Eye) and expose routing decisions as headers
+
+  Client overrides (for demos):
+     body.model = "tier-pym" | "tier-stark" | "tier-thanos"   force a tier
+     body.model = "<deployment name>"                         use that deployment as-is
+     body.model missing / "heimdal-auto" / "auto"             route automatically
+-->
+<policies>
+  <inbound>
+    <base />
+
+    <!-- 1. Who is calling? -->
+    <set-variable name="user" value="@(context.Subscription?.Name ?? &quot;anonymous&quot;)" />
+
+    <!-- 2. Per-user token limit (premium product gets more) -->
+    <llm-token-limit
+        counter-key="@(context.Subscription?.Id ?? context.Request.IpAddress)"
+        tokens-per-minute="@(context.Product != null &amp;&amp; context.Product.Id == &quot;infinity-gauntlet&quot; ? int.Parse(&quot;{{tpm-premium}}&quot;) : int.Parse(&quot;{{tpm-standard}}&quot;))"
+        estimate-prompt-tokens="true"
+        remaining-tokens-header-name="x-heimdal-remaining-tokens" />
+
+    <!-- 3a. Read the request once -->
+    <set-variable name="body" value="@(context.Request.Body.As&lt;JObject&gt;(preserveContent: true))" />
+
+    <set-variable name="requestedModel" value="@{
+        var b = (JObject)context.Variables[&quot;body&quot;];
+        var m = b[&quot;model&quot;];
+        return m == null ? &quot;&quot; : ((string)m ?? &quot;&quot;);
+    }" />
+
+    <!-- Concatenated text of all messages -->
+    <set-variable name="promptText" value="@{
+        var b = (JObject)context.Variables[&quot;body&quot;];
+        var msgs = b[&quot;messages&quot;] as JArray;
+        string text = &quot;&quot;;
+        if (msgs != null) {
+            foreach (var m in msgs) {
+                var c = m[&quot;content&quot;];
+                if (c == null) { continue; }
+                if (c.Type == JTokenType.String) {
+                    text += (string)c + &quot;\n&quot;;
+                } else if (c.Type == JTokenType.Array) {
+                    foreach (var part in (JArray)c) {
+                        var t = part[&quot;text&quot;];
+                        if (t != null) { text += (string)t + &quot;\n&quot;; }
+                    }
+                }
+            }
+        }
+        return text;
+    }" />
+
+    <!-- 3b. Length signal: estimated prompt tokens -> tier index 0|1|2 -->
+    <set-variable name="promptTokens" value="@(((string)context.Variables[&quot;promptText&quot;]).Length / 4)" />
+    <set-variable name="lengthTier" value="@{
+        int tokens = (int)context.Variables[&quot;promptTokens&quot;];
+        int th = int.Parse(&quot;{{length-threshold-tokens}}&quot;);
+        return tokens &lt; th ? 0 : (tokens &lt; th * 4 ? 1 : 2);
+    }" />
+
+    <!-- 3c. Complexity signal (heuristic): score -> tier index -->
+    <set-variable name="complexityScore" value="@{
+        string text = ((string)context.Variables[&quot;promptText&quot;]).ToLowerInvariant();
+        var b = (JObject)context.Variables[&quot;body&quot;];
+        int score = 0;
+
+        // code or query-like content
+        if (text.Contains(&quot;```&quot;) || text.Contains(&quot;def &quot;) || text.Contains(&quot;class &quot;) || text.Contains(&quot;select &quot;) || text.Contains(&quot;function &quot;)) { score += 2; }
+
+        // reasoning / analysis verbs (max 3 points)
+        string[] kw = new string[] { &quot;step by step&quot;, &quot;explain why&quot;, &quot;analyze&quot;, &quot;analyse&quot;, &quot;compare&quot;, &quot;trade-off&quot;, &quot;tradeoff&quot;,
+                                     &quot;prove&quot;, &quot;derive&quot;, &quot;optimize&quot;, &quot;architecture&quot;, &quot;evaluate&quot;, &quot;design a&quot;, &quot;strategy&quot;, &quot;root cause&quot;, &quot;pros and cons&quot; };
+        int hits = 0;
+        foreach (var k in kw) { if (text.Contains(k)) { hits++; } }
+        score += Math.Min(hits, 3);
+
+        // several questions in one prompt
+        int q = text.Split(new char[] { '?' }).Length - 1;
+        if (q &gt; 3) { score += 2; } else if (q &gt; 1) { score += 1; }
+
+        // math
+        if (text.Contains(&quot;integral&quot;) || text.Contains(&quot;theorem&quot;) || text.Contains(&quot;equation&quot;) || text.Contains(&quot;probability&quot;)) { score += 1; }
+
+        // long conversations
+        var msgs = b[&quot;messages&quot;] as JArray;
+        if (msgs != null &amp;&amp; msgs.Count &gt; 6) { score += 1; }
+
+        return score;
+    }" />
+    <set-variable name="heuristicTier" value="@{
+        int score = (int)context.Variables[&quot;complexityScore&quot;];
+        int th = int.Parse(&quot;{{complexity-threshold}}&quot;);
+        return score &lt; th ? 0 : (score &lt; th * 2 ? 1 : 2);
+    }" />
+
+    <!-- 3d. Complexity signal (LLM classifier), only when configured; falls back to heuristic -->
+    <set-variable name="llmTier" value="@(-1)" />
+    <choose>
+      <when condition="@(&quot;{{router-mode}}&quot; != &quot;length&quot; &amp;&amp; &quot;{{complexity-mode}}&quot; == &quot;llm&quot; &amp;&amp; ((string)context.Variables[&quot;requestedModel&quot;]).Length &lt; 1)">
+        <send-request mode="new" response-variable-name="classifierResponse" timeout="15" ignore-error="true">
+          <set-url>@("{{foundry-openai-base}}/chat/completions")</set-url>
+          <set-method>POST</set-method>
+          <set-header name="Content-Type" exists-action="override">
+            <value>application/json</value>
+          </set-header>
+          <authentication-managed-identity resource="https://cognitiveservices.azure.com" />
+          <set-body>@{
+              string text = (string)context.Variables["promptText"];
+              if (text.Length > 4000) { text = text.Substring(0, 4000); }
+              var req = new JObject(
+                  new JProperty("model", "{{model-classifier}}"),
+                  new JProperty("max_completion_tokens", 16),
+                  new JProperty("messages", new JArray(
+                      new JObject(
+                          new JProperty("role", "system"),
+                          new JProperty("content", "You are a prompt complexity classifier. Reply with exactly one word: simple (chit-chat, lookups, short factual), medium (summaries, rewrites, moderate reasoning) or complex (multi-step reasoning, code design, deep analysis).")),
+                      new JObject(
+                          new JProperty("role", "user"),
+                          new JProperty("content", text)))));
+              return req.ToString();
+          }</set-body>
+        </send-request>
+        <set-variable name="llmTier" value="@{
+            try {
+                var r = (IResponse)context.Variables[&quot;classifierResponse&quot;];
+                if (r == null || r.StatusCode != 200) { return -1; }
+                string verdict = ((string)r.Body.As&lt;JObject&gt;()[&quot;choices&quot;][0][&quot;message&quot;][&quot;content&quot;] ?? &quot;&quot;).Trim().ToLowerInvariant();
+                if (verdict.StartsWith(&quot;simple&quot;)) { return 0; }
+                if (verdict.StartsWith(&quot;medium&quot;)) { return 1; }
+                if (verdict.StartsWith(&quot;complex&quot;)) { return 2; }
+                return -1;
+            } catch (Exception) { return -1; }
+        }" />
+      </when>
+    </choose>
+
+    <!-- 3e. Decide: tier + deployment + reason -->
+    <set-variable name="tier" value="@{
+        string requested = (string)context.Variables[&quot;requestedModel&quot;];
+        if (requested == &quot;tier-pym&quot;) { return &quot;pym&quot;; }
+        if (requested == &quot;tier-stark&quot;) { return &quot;stark&quot;; }
+        if (requested == &quot;tier-thanos&quot;) { return &quot;thanos&quot;; }
+        if (requested.Length &gt; 0 &amp;&amp; requested != &quot;heimdal-auto&quot; &amp;&amp; requested != &quot;auto&quot;) { return &quot;explicit&quot;; }
+
+        string mode = &quot;{{router-mode}}&quot;;
+        int lengthTier = (int)context.Variables[&quot;lengthTier&quot;];
+        int llmTier = (int)context.Variables[&quot;llmTier&quot;];
+        int complexityTier = llmTier &gt;= 0 ? llmTier : (int)context.Variables[&quot;heuristicTier&quot;];
+        int t = mode == &quot;length&quot; ? lengthTier : (mode == &quot;complexity&quot; ? complexityTier : Math.Max(lengthTier, complexityTier));
+        return t == 0 ? &quot;pym&quot; : (t == 1 ? &quot;stark&quot; : &quot;thanos&quot;);
+    }" />
+
+    <set-variable name="routedModel" value="@{
+        string tier = (string)context.Variables[&quot;tier&quot;];
+        if (tier == &quot;pym&quot;) { return &quot;{{model-tier-pym}}&quot;; }
+        if (tier == &quot;stark&quot;) { return &quot;{{model-tier-stark}}&quot;; }
+        if (tier == &quot;thanos&quot;) { return &quot;{{model-tier-thanos}}&quot;; }
+        return (string)context.Variables[&quot;requestedModel&quot;];
+    }" />
+
+    <set-variable name="routeReason" value="@{
+        string tier = (string)context.Variables[&quot;tier&quot;];
+        if (tier == &quot;explicit&quot;) { return &quot;client-selected-deployment&quot;; }
+        if (((string)context.Variables[&quot;requestedModel&quot;]).StartsWith(&quot;tier-&quot;)) { return &quot;client-forced-tier&quot;; }
+        return &quot;mode=&quot; + &quot;{{router-mode}}&quot; + &quot;;complexity=&quot; + &quot;{{complexity-mode}}&quot;
+             + &quot;;tokens~&quot; + ((int)context.Variables[&quot;promptTokens&quot;]).ToString()
+             + &quot;;score=&quot; + ((int)context.Variables[&quot;complexityScore&quot;]).ToString()
+             + &quot;;llmTier=&quot; + ((int)context.Variables[&quot;llmTier&quot;]).ToString();
+    }" />
+
+    <!-- 4. Call Foundry with the gateway identity, deployment chosen via body.model -->
+    <set-body>@{
+        var b = (JObject)context.Variables["body"];
+        b["model"] = (string)context.Variables["routedModel"];
+        return b.ToString();
+    }</set-body>
+    <set-backend-service backend-id="asgard-foundry" />
+    <authentication-managed-identity resource="https://cognitiveservices.azure.com" />
+    <!-- never forward the client's APIM key to the backend -->
+    <set-header name="api-key" exists-action="delete" />
+
+    <!-- 5. The All-Seeing Eye: per-user token metrics -->
+    <llm-emit-token-metric namespace="heimdal">
+      <dimension name="User" value="@((string)context.Variables[&quot;user&quot;])" />
+      <dimension name="Model" value="@((string)context.Variables[&quot;routedModel&quot;])" />
+      <dimension name="Tier" value="@((string)context.Variables[&quot;tier&quot;])" />
+      <dimension name="Product" value="@(context.Product?.Id ?? &quot;none&quot;)" />
+      <dimension name="API ID" />
+    </llm-emit-token-metric>
+  </inbound>
+
+  <backend>
+    <forward-request />
+  </backend>
+
+  <outbound>
+    <base />
+    <set-header name="x-heimdal-user" exists-action="override">
+      <value>@((string)context.Variables["user"])</value>
+    </set-header>
+    <set-header name="x-heimdal-tier" exists-action="override">
+      <value>@((string)context.Variables["tier"])</value>
+    </set-header>
+    <set-header name="x-heimdal-model" exists-action="override">
+      <value>@((string)context.Variables["routedModel"])</value>
+    </set-header>
+    <set-header name="x-heimdal-route-reason" exists-action="override">
+      <value>@((string)context.Variables["routeReason"])</value>
+    </set-header>
+  </outbound>
+
+  <on-error>
+    <base />
+  </on-error>
+</policies>

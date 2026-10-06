@@ -1,0 +1,144 @@
+// HEIMDAL – Azure API Management as LLM + agent gateway (Bifrost).
+// Scope: resource group in Sweden Central. No private networking (demo).
+targetScope = 'resourceGroup'
+
+@description('Azure region. Sweden Central for model availability.')
+param location string = 'swedencentral'
+
+@description('Project prefix used in resource names.')
+param prefix string = 'heimdal'
+
+@description('Short unique suffix to keep global names unique (storage, APIM, Foundry subdomain).')
+@minLength(3)
+@maxLength(8)
+param suffix string = take(uniqueString(resourceGroup().id), 6)
+
+@description('Publisher e-mail for APIM.')
+param publisherEmail string
+
+@description('Publisher name for APIM.')
+param publisherName string = 'Asgard Gateway Ops'
+
+@description('APIM SKU. StandardV2 supports LLM policies and MCP servers.')
+@allowed(['BasicV2', 'StandardV2', 'Developer', 'Premium'])
+param apimSku string = 'StandardV2'
+
+@description('Model deployments in Foundry. Each: { name, model, version, format, sku, capacity }.')
+param models array
+
+@description('Router tier -> deployment name. pym = small/short, stark = mid, thanos = large/reasoning.')
+param tierModels object
+
+@description('Deployment used for the LLM-based complexity classifier.')
+param classifierModel string
+
+@description('Router settings (changeable at runtime via APIM named values).')
+param router object = {
+  mode: 'hybrid' // length | complexity | hybrid
+  complexityMode: 'heuristic' // heuristic | llm
+  lengthThresholdTokens: '500'
+  complexityThreshold: '3'
+}
+
+@description('Tokens-per-minute limits per product.')
+param tokenLimits object = {
+  standard: '5000'
+  premium: '100000'
+}
+
+@description('Demo users: one APIM subscription each.')
+param demoUsers array = [
+  { name: 'thor', product: 'avengers-initiative' }
+  { name: 'loki', product: 'avengers-initiative' }
+  { name: 'hulk', product: 'avengers-initiative' }
+  { name: 'black-widow', product: 'avengers-initiative' }
+  { name: 'tony-stark', product: 'infinity-gauntlet' }
+]
+
+var tags = {
+  project: 'heimdal'
+  theme: 'mcu'
+  purpose: 'apim-llm-gateway-demo'
+}
+
+module monitoring 'modules/monitoring.bicep' = {
+  name: 'monitoring'
+  params: {
+    location: location
+    logName: 'log-${prefix}-allseeing-${suffix}'
+    appInsightsName: 'appi-${prefix}-allseeing-${suffix}'
+    tags: tags
+  }
+}
+
+module foundry 'modules/foundry.bicep' = {
+  name: 'foundry'
+  params: {
+    location: location
+    accountName: 'fdry-${prefix}-asgard-${suffix}'
+    projectName: 'proj-${prefix}-avengers'
+    models: models
+    workspaceId: monitoring.outputs.workspaceId
+    tags: tags
+  }
+}
+
+module apim 'modules/apim.bicep' = {
+  name: 'apim'
+  params: {
+    location: location
+    apimName: 'apim-${prefix}-bifrost-${suffix}'
+    sku: apimSku
+    publisherEmail: publisherEmail
+    publisherName: publisherName
+    appInsightsId: monitoring.outputs.appInsightsId
+    appInsightsKey: monitoring.outputs.appInsightsKey
+    workspaceId: monitoring.outputs.workspaceId
+    foundryEndpoint: foundry.outputs.endpoint
+    tierModels: tierModels
+    classifierModel: classifierModel
+    router: router
+    tokenLimits: tokenLimits
+    tags: tags
+  }
+}
+
+module rbac 'modules/rbac.bicep' = {
+  name: 'rbac'
+  params: {
+    foundryAccountName: foundry.outputs.accountName
+    apimPrincipalId: apim.outputs.principalId
+  }
+}
+
+module mcp 'modules/mcp-function.bicep' = {
+  name: 'shield-mcp'
+  params: {
+    location: location
+    functionAppName: 'func-${prefix}-shield-mcp-${suffix}'
+    planName: 'plan-${prefix}-shield-${suffix}'
+    storageName: toLower('st${prefix}${uniqueString(resourceGroup().id)}')
+    appInsightsConnectionString: monitoring.outputs.appInsightsConnectionString
+    tags: tags
+  }
+}
+
+module apis 'modules/apim-apis.bicep' = {
+  name: 'apim-apis'
+  params: {
+    apimName: apim.outputs.name
+    demoUsers: demoUsers
+    mcpBackendUrl: 'https://${mcp.outputs.defaultHostName}'
+  }
+  dependsOn: [rbac]
+}
+
+output resourceGroup string = resourceGroup().name
+output apimName string = apim.outputs.name
+output gatewayUrl string = apim.outputs.gatewayUrl
+output foundryAccountName string = foundry.outputs.accountName
+output foundryProjectName string = foundry.outputs.projectName
+output foundryEndpoint string = foundry.outputs.endpoint
+output functionAppName string = mcp.outputs.name
+output appInsightsName string = monitoring.outputs.appInsightsName
+output logAnalyticsWorkspaceId string = monitoring.outputs.workspaceCustomerId

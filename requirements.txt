@@ -1,0 +1,11 @@
+openai>=1.99
+python-dotenv>=1.0
+requests>=2.32
+pandas>=2.2
+matplotlib>=3.9
+azure-identity>=1.19
+azure-monitor-query>=1.4
+azure-ai-projects>=2.0.0b1
+mcp>=1.12
+agent-framework>=1.0.0b1
+ipykernel>=6.29
