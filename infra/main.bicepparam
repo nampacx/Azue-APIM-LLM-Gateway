@@ -22,9 +22,9 @@ param models = [
     capacity: 100
   }
   {
-    name: 'gpt-6-sol'
-    model: 'gpt-6-sol'
-    version: '2026-09-22'
+    name: 'gpt-5-6-terra'
+    model: 'gpt-5.6-terra'
+    version: '2026-07-09'
     format: 'OpenAI'
     sku: 'GlobalStandard'
     capacity: 50
@@ -49,9 +49,9 @@ param models = [
 
 // Router tiers -> deployment names above.
 param tierModels = {
-  pym: 'gpt-6-luna' // Ant-Man: small & quick
-  stark: 'gpt-6-sol' // Iron Man: capable all-rounder
-  thanos: 'gpt-6-1-sol' // Thanos: deep reasoning (becomes mai-thinking-1 when enableMai)
+  pym: 'gpt-6-luna' // Ant-Man: luna tier, small & quick
+  stark: 'gpt-5-6-terra' // Iron Man: terra tier, capable all-rounder
+  thanos: 'gpt-6-1-sol' // Thanos: sol tier, deep reasoning (becomes mai-thinking-1 when enableMai)
 }
 param classifierModel = 'gpt-6-luna'
 

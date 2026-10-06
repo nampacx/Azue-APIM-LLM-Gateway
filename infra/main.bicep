@@ -29,16 +29,16 @@ param enableMai bool = false
 @description('Model deployments in Foundry. Each: { name, model, version, format, sku, capacity }.')
 param models array = [
   { name: 'gpt-6-luna', model: 'gpt-6-luna', version: '2026-09-22', format: 'OpenAI', sku: 'GlobalStandard', capacity: 100 }
-  { name: 'gpt-6-sol', model: 'gpt-6-sol', version: '2026-09-22', format: 'OpenAI', sku: 'GlobalStandard', capacity: 50 }
+  { name: 'gpt-5-6-terra', model: 'gpt-5.6-terra', version: '2026-07-09', format: 'OpenAI', sku: 'GlobalStandard', capacity: 50 }
   { name: 'gpt-6-1-sol', model: 'gpt-6.1-sol', version: '2026-09-29', format: 'OpenAI', sku: 'GlobalStandard', capacity: 30 }
   { name: 'mai-thinking-1', model: 'MAI-Thinking-1', version: '2026-06-01', format: 'Microsoft', sku: 'GlobalStandard', capacity: 20 }
 ]
 
 @description('Router tier -> deployment name. pym = small/short, stark = mid, thanos = large/reasoning.')
 param tierModels object = {
-  pym: 'gpt-6-luna'
-  stark: 'gpt-6-sol'
-  thanos: 'gpt-6-1-sol' // replaced by mai-thinking-1 when enableMai = true
+  pym: 'gpt-6-luna' // luna: small & quick
+  stark: 'gpt-5-6-terra' // terra: mid-tier all-rounder
+  thanos: 'gpt-6-1-sol' // sol: top tier // replaced by mai-thinking-1 when enableMai = true
 }
 
 @description('Deployment used for the LLM-based complexity classifier.')

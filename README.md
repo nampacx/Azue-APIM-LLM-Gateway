@@ -22,7 +22,7 @@ flowchart LR
     MCP[MCP server /shield-mcp]
   end
   R -->|tier-pym| F1[gpt-6-luna]
-  R -->|tier-stark| F2[gpt-6-sol]
+  R -->|tier-stark| F2[gpt-5.6-terra]
   R -->|tier-thanos| F3[MAI-Thinking-1]
   subgraph Foundry[Microsoft Foundry · Sweden Central]
     F1; F2; F3
@@ -59,7 +59,7 @@ python scripts/deploy.py --check-models                # are the models in swede
 python scripts/deploy.py --email you@contoso.com       # ~20-40 min (APIM), writes .env
 ```
 
-> **Models** (verified against [Models sold directly by Azure](https://learn.microsoft.com/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure)): `gpt-6-luna` and `gpt-6-sol` version `2026-09-22`, `MAI-Thinking-1` (preview, format `Microsoft`) version `2026-06-01`, all `GlobalStandard` in Sweden Central.
+> **Models** (verified against [Models sold directly by Azure](https://learn.microsoft.com/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure)): `gpt-6-luna` version `2026-09-22`, `gpt-5.6-terra` version `2026-07-09`, `gpt-6.1-sol` version `2026-09-29`, `MAI-Thinking-1` (preview, format `Microsoft`) version `2026-06-01`, all `GlobalStandard` in Sweden Central.
 > MAI-Thinking-1 is served on `/mai/v1` (not `/openai/v1`) and needs `max_completion_tokens`; the router handles both via the `mai-deployments` named value. Its default quota tier can be 0 TPM – request quota if deployment fails.
 > Edit `models` / `tierModels` in `infra/main.bicepparam` (and the defaults in `infra/main.bicep` for azd) to use other deployments.
 
@@ -114,6 +114,6 @@ Clients may also force `model="tier-thanos"` or a concrete deployment name; `mod
 ## Known notes / caveats
 - **Token metrics** require *Custom metrics with dimensions* on the App Insights resource (Usage & estimated costs → Custom metrics → With dimensions; usually default for new workspace-based resources). For streaming, send `stream_options={"include_usage": true}`.
 - Logs/metrics lag a few minutes. The LLM logs table (`ApiManagementGatewayLlmLog`) gives exact per-request tokens and model.
-- MCP via APIM uses API version `2025-09-01-preview`. The Function MCP extension needs the `mcp_extension` system key; `deploy.py` injects it into the `shield-mcp-key` named value after code publish.
+- MCP is a plain HTTP API in APIM (streamable HTTP forwarded unbuffered; the preview `type: mcp` API returned 500 here). The Function MCP extension needs the `mcp_extension` system key; `deploy.py` injects it into the `shield-mcp-key` named value after code publish.
 - Foundry connection (notebook 07) and Agent Framework (notebook 08) use preview SDK/APIs – adjust to current docs if signatures changed.
 - This is a demo: public endpoints, subscription keys, no VNet. Harden (Entra/JWT auth, private endpoints, Key Vault named values) for real use.

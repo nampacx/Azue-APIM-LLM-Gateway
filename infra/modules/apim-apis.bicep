@@ -80,12 +80,14 @@ resource llmAvengersLink 'Microsoft.ApiManagement/service/products/apis@2025-09-
   name: llmApi.name
 }
 
-// ---- MCP server (passthrough to the Function app) ------------------------------
+// ---- MCP server (streamable HTTP passthrough to the Function app) ---------------
+// A plain HTTP API, not `type: 'mcp'`: the preview MCP API type ran as a managed-tools server
+// (0 tools -> 500 on tools/call) and ignored transportType on this instance. The Function's
+// MCP extension already speaks streamable HTTP, so APIM only forwards /mcp unbuffered.
 resource mcpApi 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
   parent: apim
   name: 'shield-mcp'
   properties: {
-    type: 'mcp'
     displayName: 'S.H.I.E.L.D. MCP'
     description: 'Avengers roster, missions and infinity stones as MCP tools (Azure Function).'
     path: 'shield-mcp'
@@ -96,15 +98,20 @@ resource mcpApi 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
       query: 'subscription-key'
     }
     serviceUrl: mcpBackendUrl
-    mcpProperties: {
-      transportType: 'streamable'
-      // the API expects an object keyed by endpoint name (the docs show an array)
-      endpoints: {
-        message: { uriTemplate: '/runtime/webhooks/mcp' }
-      }
-    }
   }
 }
+
+var mcpMethods = ['POST', 'GET', 'DELETE']
+
+resource mcpOps 'Microsoft.ApiManagement/service/apis/operations@2025-09-01-preview' = [for m in mcpMethods: {
+  parent: mcpApi
+  name: 'mcp-${toLower(m)}'
+  properties: {
+    displayName: 'MCP ${m}'
+    method: m
+    urlTemplate: '/mcp'
+  }
+}]
 
 resource mcpPolicy 'Microsoft.ApiManagement/service/apis/policies@2025-09-01-preview' = {
   parent: mcpApi
@@ -113,6 +120,7 @@ resource mcpPolicy 'Microsoft.ApiManagement/service/apis/policies@2025-09-01-pre
     format: 'rawxml'
     value: loadTextContent('../../policies/shield-mcp.xml')
   }
+  dependsOn: [mcpOps]
 }
 
 resource mcpGauntletLink 'Microsoft.ApiManagement/service/products/apis@2025-09-01-preview' = {

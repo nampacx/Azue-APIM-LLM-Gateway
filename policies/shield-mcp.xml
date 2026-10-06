@@ -11,6 +11,7 @@
     <set-header name="x-functions-key" exists-action="override">
       <value>{{shield-mcp-key}}</value>
     </set-header>
+    <rewrite-uri template="/runtime/webhooks/mcp" copy-unmatched-params="false" />
     <set-header name="api-key" exists-action="delete" />
     <set-header name="Ocp-Apim-Subscription-Key" exists-action="delete" />
   </inbound>
