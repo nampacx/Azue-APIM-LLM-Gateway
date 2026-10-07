@@ -1,0 +1,36 @@
+{
+  "$comment": "Single source of truth for models, router tiers, limits and demo users. Read by infra/main.bicep (loadJsonContent), scripts/deploy.py and notebooks/heimdal_helpers.py. Versions per https://learn.microsoft.com/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure (GlobalStandard, swedencentral). Formats 'Microsoft' (MAI) are only deployed when enableMai = true.",
+  "models": [
+    { "name": "gpt-6-luna", "model": "gpt-6-luna", "version": "2026-09-22", "format": "OpenAI", "sku": "GlobalStandard", "capacity": 100 },
+    { "name": "gpt-5-6-terra", "model": "gpt-5.6-terra", "version": "2026-07-09", "format": "OpenAI", "sku": "GlobalStandard", "capacity": 50 },
+    { "name": "gpt-6-1-sol", "model": "gpt-6.1-sol", "version": "2026-09-29", "format": "OpenAI", "sku": "GlobalStandard", "capacity": 30 },
+    { "name": "text-embedding-3-small", "model": "text-embedding-3-small", "version": "1", "format": "OpenAI", "sku": "GlobalStandard", "capacity": 50 },
+    { "name": "mai-thinking-1", "model": "MAI-Thinking-1", "version": "2026-06-01", "format": "Microsoft", "sku": "GlobalStandard", "capacity": 20 }
+  ],
+  "tierModels": {
+    "pym": "gpt-6-luna",
+    "stark": "gpt-5-6-terra",
+    "thanos": "gpt-6-1-sol"
+  },
+  "maiThanosModel": "mai-thinking-1",
+  "classifierModel": "gpt-6-luna",
+  "embeddingModel": "text-embedding-3-small",
+  "router": {
+    "mode": "hybrid",
+    "complexityMode": "heuristic",
+    "lengthThresholdTokens": "500",
+    "complexityThreshold": "3"
+  },
+  "tokenLimits": {
+    "standard": "5000",
+    "premium": "100000"
+  },
+  "demoUsers": [
+    { "name": "thor", "product": "avengers-initiative" },
+    { "name": "loki", "product": "avengers-initiative" },
+    { "name": "hulk", "product": "avengers-initiative" },
+    { "name": "black-widow", "product": "avengers-initiative" },
+    { "name": "tony-stark", "product": "infinity-gauntlet" }
+  ],
+  "foundryAgentUser": "black-widow"
+}

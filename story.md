@@ -22,6 +22,7 @@ the deployment is complete (gateway URL, user keys). **Run first.**
 ### 🌈 01 · `01_bifrost_basic_call` – Crossing the Bifrost
 The first call. An OpenAI-compatible request goes to the gateway with only a gateway URL and a personal key – no Foundry
 endpoint, no credentials. The response headers `x-heimdal-user|tier|model|route-reason` reveal who asked and which model answered.
+The same door also serves the **Responses API** (same router) and **embeddings**.
 
 ### 👁️ 02 · `02_all_seeing_eye_usage` – Token usage per user
 Five heroes (`thor`, `loki`, `hulk`, `black-widow`, `tony-stark`) generate traffic. The notebook then queries Log Analytics (KQL):
@@ -44,10 +45,10 @@ from the gateway or from the model.
 
 ### 🛡️ 06 · `06_shield_mcp_via_bifrost` – S.H.I.E.L.D. tools via MCP
 An MCP server written as an **Azure Function (Python)** is exposed through APIM: subscription auth, rate limiting, and the function key
-injected by the gateway. The notebook lists the tools (`list_avengers`, `get_avenger`, `get_mission_status`, `locate_infinity_stone`) and calls them.
+injected by the gateway. The Function itself only accepts traffic from APIM's VNet subnet – the gateway is the only way in. The notebook lists the tools (`list_avengers`, `get_avenger`, `get_mission_status`, `locate_infinity_stone`) and calls them.
 
 ### 🤖 07 · `07_foundry_agent_via_bifrost` – Foundry Agent Service → Bifrost
-Registers the gateway as a bring-your-own-model connection in the Foundry project and creates an agent on the router alias `heimdal-auto`.
+Uses the bring-your-own-model connection to the gateway that the deployment created in the Foundry project and creates an agent on the router alias `heimdal-auto`.
 Every agent LLM call now flows through HEIMDAL and is attributed to `black-widow`. *(Uses preview SDKs.)*
 
 ### 🦸 08 · `08_agent_framework_via_bifrost` – The finale

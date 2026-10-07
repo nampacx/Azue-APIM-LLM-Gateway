@@ -4,20 +4,22 @@ param apimName string
 param sku string
 param publisherEmail string
 param publisherName string
-param appInsightsId string
-@secure()
-param appInsightsKey string
+@description('Delegated subnet for outbound VNet integration (v2 tiers).')
+param subnetId string
+param appInsightsName string
 param workspaceId string
 param foundryEndpoint string
 @description('Comma-separated deployment names served by the MAI surface (/mai/v1).')
 param maiDeployments string
 param tierModels object
 param classifierModel string
+param embeddingModel string
 param router object
 param tokenLimits object
+@secure()
+@description('Function mcp_extension system key; empty -> placeholder until the deploy script wires it.')
+param mcpKey string
 param tags object
-
-var apiVersion = '2025-09-01-preview'
 
 resource apim 'Microsoft.ApiManagement/service@2025-09-01-preview' = {
   name: apimName
@@ -31,18 +33,42 @@ resource apim 'Microsoft.ApiManagement/service@2025-09-01-preview' = {
   properties: {
     publisherEmail: publisherEmail
     publisherName: publisherName
+    // Outbound VNet integration: gateway stays public, backend calls leave via the subnet (MCP Function allows only it).
+    virtualNetworkType: 'External'
+    virtualNetworkConfiguration: { subnetResourceId: subnetId }
   }
 }
 
 // ---- Observability -------------------------------------------------------
+resource appi 'Microsoft.Insights/components@2020-02-02' existing = {
+  name: appInsightsName
+}
+
+// Monitoring Metrics Publisher: the logger sends telemetry with APIM's managed identity (no instrumentation key).
+var metricsPublisherRoleId = '3913510d-42f4-4e42-8a64-420c390055eb'
+
+resource apimMetricsPublisher 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(appi.id, apim.id, metricsPublisherRoleId)
+  scope: appi
+  properties: {
+    principalId: apim.identity.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', metricsPublisherRoleId)
+  }
+}
+
 resource logger 'Microsoft.ApiManagement/service/loggers@2025-09-01-preview' = {
   parent: apim
   name: 'heimdal-appinsights'
   properties: {
     loggerType: 'applicationInsights'
-    resourceId: appInsightsId
-    credentials: { instrumentationKey: appInsightsKey }
+    resourceId: appi.id
+    credentials: {
+      connectionString: appi.properties.ConnectionString
+      identityClientId: 'SystemAssigned'
+    }
   }
+  dependsOn: [apimMetricsPublisher]
 }
 
 // metrics:true enables custom metrics (llm-emit-token-metric) to App Insights.
@@ -133,6 +159,7 @@ var namedValues = [
   { name: 'model-tier-thanos', value: tierModels.thanos, desc: 'Deployment for large/complex/reasoning prompts' }
   { name: 'mai-deployments', value: maiDeployments, desc: 'Deployments served via /mai/v1 (comma-separated)' }
   { name: 'model-classifier', value: classifierModel, desc: 'Deployment used for llm complexity classification' }
+  { name: 'model-embedding', value: embeddingModel, desc: 'Deployment used by /embeddings for model heimdal-auto' }
   { name: 'foundry-openai-base', value: '${replace(foundryEndpoint, 'cognitiveservices.azure.com', 'openai.azure.com')}/openai/v1', desc: 'Foundry OpenAI v1 base URL' }
   { name: 'tpm-standard', value: tokenLimits.standard, desc: 'Tokens/minute for avengers-initiative' }
   { name: 'tpm-premium', value: tokenLimits.premium, desc: 'Tokens/minute for infinity-gauntlet' }
@@ -149,13 +176,14 @@ resource nv 'Microsoft.ApiManagement/service/namedValues@2025-09-01-preview' = [
   }
 }]
 
-// Function system key for the MCP backend; real value injected by scripts/deploy.py after code deploy.
-resource mcpKey 'Microsoft.ApiManagement/service/namedValues@2025-09-01-preview' = {
+// Function system key for the MCP backend. First deployment: placeholder, wired by scripts/deploy.py / the azd hook
+// after code publish. Later deployments receive the current key via the mcpKey parameter, so a redeploy keeps MCP working.
+resource mcpKeyNv 'Microsoft.ApiManagement/service/namedValues@2025-09-01-preview' = {
   parent: apim
   name: 'shield-mcp-key'
   properties: {
     displayName: 'shield-mcp-key'
-    value: 'set-by-deploy-script'
+    value: empty(mcpKey) ? 'set-by-deploy-script' : mcpKey
     secret: true
   }
 }
@@ -163,4 +191,3 @@ resource mcpKey 'Microsoft.ApiManagement/service/namedValues@2025-09-01-preview'
 output name string = apim.name
 output principalId string = apim.identity.principalId
 output gatewayUrl string = apim.properties.gatewayUrl
-output apiVersionUsed string = apiVersion

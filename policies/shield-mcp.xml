@@ -1,10 +1,23 @@
 <!--
   S.H.I.E.L.D. MCP policy: per-caller rate limit + backend function key.
   Do not touch context.Response.Body here – it would buffer the MCP stream.
+  The Function only accepts calls from APIM's outbound VNet subnet, so this API is the only way in.
 -->
 <policies>
   <inbound>
     <base />
+    <!-- keys in URLs end up in logs: header only -->
+    <choose>
+      <when condition="@(context.Request.Url.Query.ContainsKey(&quot;subscription-key&quot;))">
+        <return-response>
+          <set-status code="400" reason="Bad Request" />
+          <set-header name="Content-Type" exists-action="override">
+            <value>application/json</value>
+          </set-header>
+          <set-body>{"error":{"code":"key_in_url","message":"Send the subscription key in the api-key header, not in the URL."}}</set-body>
+        </return-response>
+      </when>
+    </choose>
     <rate-limit-by-key calls="30" renewal-period="60"
         counter-key="@(context.Subscription?.Id ?? context.Request.IpAddress)" />
     <!-- Functions MCP extension requires the mcp_extension system key -->

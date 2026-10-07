@@ -5,6 +5,9 @@
     "environmentName": { "value": "${AZURE_ENV_NAME}" },
     "location": { "value": "${AZURE_LOCATION}" },
     "publisherEmail": { "value": "${HEIMDAL_PUBLISHER_EMAIL}" },
-    "enableMai": { "value": "${HEIMDAL_ENABLE_MAI=false}" }
+    "enableMai": { "value": "${HEIMDAL_ENABLE_MAI=false}" },
+    "mcpKey": { "value": "${HEIMDAL_MCP_KEY=}" },
+    "principalId": { "value": "${AZURE_PRINCIPAL_ID=}" },
+    "principalType": { "value": "${AZURE_PRINCIPAL_TYPE=User}" }
   }
 }

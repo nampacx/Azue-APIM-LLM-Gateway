@@ -32,7 +32,7 @@ resource gauntlet 'Microsoft.ApiManagement/service/products@2025-09-01-preview' 
   }
 }
 
-// ---- LLM API: OpenAI-compatible chat completions with routing ---------------
+// ---- LLM API: OpenAI-compatible chat completions / responses (routed) + embeddings ---------------
 resource llmApi 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
   parent: apim
   name: 'bifrost-llm'
@@ -44,7 +44,7 @@ resource llmApi 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
     subscriptionRequired: true
     subscriptionKeyParameterNames: {
       header: 'api-key'
-      query: 'subscription-key'
+      query: 'subscription-key' // required by the schema; the policy rejects keys sent in the URL
     }
     serviceUrl: 'https://placeholder.invalid' // overridden by set-backend-service in policy
   }
@@ -60,6 +60,27 @@ resource chatOp 'Microsoft.ApiManagement/service/apis/operations@2025-09-01-prev
   }
 }
 
+// Responses API (agents, newer SDKs) goes through the same router as chat completions.
+resource responsesOp 'Microsoft.ApiManagement/service/apis/operations@2025-09-01-preview' = {
+  parent: llmApi
+  name: 'responses'
+  properties: {
+    displayName: 'Responses'
+    method: 'POST'
+    urlTemplate: '/responses'
+  }
+}
+
+resource embeddingsOp 'Microsoft.ApiManagement/service/apis/operations@2025-09-01-preview' = {
+  parent: llmApi
+  name: 'embeddings'
+  properties: {
+    displayName: 'Embeddings'
+    method: 'POST'
+    urlTemplate: '/embeddings'
+  }
+}
+
 resource llmPolicy 'Microsoft.ApiManagement/service/apis/policies@2025-09-01-preview' = {
   parent: llmApi
   name: 'policy'
@@ -67,7 +88,17 @@ resource llmPolicy 'Microsoft.ApiManagement/service/apis/policies@2025-09-01-pre
     format: 'rawxml'
     value: loadTextContent('../../policies/bifrost-router.xml')
   }
-  dependsOn: [chatOp]
+  dependsOn: [chatOp, responsesOp]
+}
+
+// Operation policy without <base />: embeddings skip the chat router (no tiers, llm-* policies don't apply).
+resource embeddingsPolicy 'Microsoft.ApiManagement/service/apis/operations/policies@2025-09-01-preview' = {
+  parent: embeddingsOp
+  name: 'policy'
+  properties: {
+    format: 'rawxml'
+    value: loadTextContent('../../policies/bifrost-embeddings.xml')
+  }
 }
 
 resource llmGauntletLink 'Microsoft.ApiManagement/service/products/apis@2025-09-01-preview' = {
@@ -95,7 +126,7 @@ resource mcpApi 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
     subscriptionRequired: true
     subscriptionKeyParameterNames: {
       header: 'api-key'
-      query: 'subscription-key'
+      query: 'subscription-key' // rejected by the policy
     }
     serviceUrl: mcpBackendUrl
   }

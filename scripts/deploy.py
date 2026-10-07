@@ -10,7 +10,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -22,6 +21,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 AZ = shutil.which("az") or "az"
 APIM_API = "2025-09-01-preview"
+# Shared with infra/main.bicep (loadJsonContent) and the notebooks: models, tiers, demo users.
+CONFIG = json.loads((ROOT / "infra" / "config" / "heimdal.json").read_text(encoding="utf-8"))
 
 
 def az(*args: str, check: bool = True, capture: bool = True) -> str:
@@ -36,13 +37,8 @@ def az_json(*args: str):
 
 
 def declared_models() -> list[dict]:
-    """Parse the `models` array of infra/main.bicepparam (simple `key: value` objects)."""
-    text = (ROOT / "infra" / "main.bicepparam").read_text(encoding="utf-8")
-    block = text.split("param models = [", 1)[1].split("\n]\n", 1)[0]
-    out = []
-    for obj in re.findall(r"\{(.*?)\}", block, flags=re.S):
-        out.append({k: v.strip("'") for k, v in re.findall(r"(\w+):\s*([^\n]+)", obj)})
-    return out
+    """The `models` array of infra/config/heimdal.json."""
+    return CONFIG["models"]
 
 
 def check_models(location: str) -> None:
@@ -67,10 +63,39 @@ def check_models(location: str) -> None:
         print(f"  {m['name']:<18} {m['model']:<18} {status}")
 
 
+def current_mcp_key(rg: str, app: str) -> str:
+    """The Function's mcp_extension key, or "" (no function yet / no code published yet)."""
+    out = az("functionapp", "keys", "list", "-g", rg, "-n", app, "-o", "json", check=False)
+    try:
+        return (json.loads(out or "{}").get("systemKeys") or {}).get("mcp_extension", "")
+    except json.JSONDecodeError:
+        return ""
+
+
+def signed_in_principal() -> tuple[str, str]:
+    """(object id, principal type) of the az login identity, for the notebook data-plane roles."""
+    oid = az("ad", "signed-in-user", "show", "--query", "id", "-o", "tsv", check=False)
+    if oid:
+        return oid, "User"
+    account = json.loads(az("account", "show", "-o", "json", check=False) or "{}")
+    if (account.get("user") or {}).get("type") == "servicePrincipal":
+        oid = az("ad", "sp", "show", "--id", account["user"]["name"], "--query", "id", "-o", "tsv", check=False)
+        if oid:
+            return oid, "ServicePrincipal"
+    print("Could not resolve the signed-in principal; skipping notebook role assignments.")
+    return "", "User"
+
+
 def deploy_infra(args) -> dict:
     az("group", "create", "-n", args.resource_group, "-l", args.location, "--tags", "project=heimdal")
     env = os.environ.copy()
     env["HEIMDAL_PUBLISHER_EMAIL"] = args.email
+    env["HEIMDAL_PRINCIPAL_ID"], env["HEIMDAL_PRINCIPAL_TYPE"] = signed_in_principal()
+    # Redeploy: pass the current MCP key so Bicep keeps the shield-mcp-key named value intact.
+    previous = az("deployment", "group", "show", "-g", args.resource_group, "-n", "heimdal-main",
+                  "--query", "properties.outputs.functionAppName.value", "-o", "tsv", check=False)
+    if previous:
+        env["HEIMDAL_MCP_KEY"] = current_mcp_key(args.resource_group, previous)
     print("Deploying Bicep (APIM can take 15-30 minutes on first run)...")
     cmd = [AZ, "deployment", "group", "create", "-g", args.resource_group, "-n", "heimdal-main",
            "-f", str(ROOT / "infra" / "main.bicep"), "-p", str(ROOT / "infra" / "main.bicepparam"),
@@ -99,11 +124,10 @@ def publish_function(rg: str, app: str) -> None:
        "--src", str(zip_path), "--build-remote", "true")
 
 
-def wire_mcp_key(rg: str, app: str, apim: str) -> None:
+def wire_mcp_key(rg: str, app: str, apim: str) -> str:
     key = ""
     for _ in range(20):
-        keys = json.loads(az("functionapp", "keys", "list", "-g", rg, "-n", app, "-o", "json", check=False) or "{}")
-        key = (keys.get("systemKeys") or {}).get("mcp_extension", "")
+        key = current_mcp_key(rg, app)
         if key:
             break
         time.sleep(15)
@@ -112,6 +136,7 @@ def wire_mcp_key(rg: str, app: str, apim: str) -> None:
     az("apim", "nv", "update", "--service-name", apim, "-g", rg, "--named-value-id", "shield-mcp-key",
        "--value", key, "--secret", "true")
     print("Wired Function MCP key into APIM named value 'shield-mcp-key'.")
+    return key
 
 
 def write_env(args, out: dict) -> None:
@@ -128,12 +153,13 @@ def write_env(args, out: dict) -> None:
         f"HEIMDAL_MCP_URL={out['gatewayUrl']}/shield-mcp/mcp",
         f"HEIMDAL_FOUNDRY_ACCOUNT={out['foundryAccountName']}",
         f"HEIMDAL_FOUNDRY_PROJECT={out['foundryProjectName']}",
+        f"HEIMDAL_FOUNDRY_CONNECTION={out.get('foundryConnectionName', 'bifrost-apim')}",
         f"HEIMDAL_FOUNDRY_PROJECT_ENDPOINT=https://{out['foundryAccountName']}.services.ai.azure.com/api/projects/{out['foundryProjectName']}",
         f"HEIMDAL_FUNCTION_APP={out['functionAppName']}",
         f"HEIMDAL_APPINSIGHTS={out['appInsightsName']}",
         f"HEIMDAL_LOG_WORKSPACE_ID={out['logAnalyticsWorkspaceId']}",
     ]
-    for user in ("thor", "loki", "hulk", "black-widow", "tony-stark"):
+    for user in (u["name"] for u in CONFIG["demoUsers"]):
         res = az_json("rest", "--method", "post", "--url",
                       f"{base}/subscriptions/{user}/listSecrets?api-version={APIM_API}")
         lines.append(f"HEIMDAL_KEY_{user.upper().replace('-', '_')}={res['primaryKey']}")
@@ -150,8 +176,14 @@ def azd_hook() -> None:
         "foundryAccountName": e["HEIMDAL_FOUNDRY_ACCOUNT"], "foundryProjectName": e["HEIMDAL_FOUNDRY_PROJECT"],
         "functionAppName": e["HEIMDAL_FUNCTION_APP"], "appInsightsName": e["HEIMDAL_APPINSIGHTS"],
         "logAnalyticsWorkspaceId": e["HEIMDAL_LOG_WORKSPACE_ID"],
+        "foundryConnectionName": e.get("HEIMDAL_FOUNDRY_CONNECTION", "bifrost-apim"),
     }
-    wire_mcp_key(args.resource_group, out["functionAppName"], out["apimName"])
+    key = wire_mcp_key(args.resource_group, out["functionAppName"], out["apimName"])
+    # Remember the key in the azd environment: main.parameters.json passes it to Bicep on the next
+    # `azd provision`, so the shield-mcp-key named value is not reset to the placeholder.
+    if e.get("HEIMDAL_MCP_KEY") != key:
+        subprocess.run([shutil.which("azd") or "azd", "env", "set", "HEIMDAL_MCP_KEY", key], check=True,
+                       capture_output=True, text=True)
     write_env(args, out)
 
 

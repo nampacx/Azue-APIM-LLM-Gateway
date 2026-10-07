@@ -1,0 +1,75 @@
+<!--
+  BIFROST EMBEDDINGS  –  operation policy for POST /bifrost/v1/embeddings
+
+  Deliberately has NO <base />: the API-level router (bifrost-router.xml) is for chat / responses only.
+  The llm-* policies don't support the embeddings schema, so this operation uses classic policies:
+     rate-limit-by-key        per-user call budget
+     model                    "heimdal-auto" | "auto" | missing  ->  {{model-embedding}}, else the deployment as sent
+     emit-metric              "Embedding Tokens" per User / Model (namespace heimdal, like the chat token metrics)
+-->
+<policies>
+  <inbound>
+    <!-- keys in URLs end up in logs: header only -->
+    <choose>
+      <when condition="@(context.Request.Url.Query.ContainsKey(&quot;subscription-key&quot;))">
+        <return-response>
+          <set-status code="400" reason="Bad Request" />
+          <set-header name="Content-Type" exists-action="override">
+            <value>application/json</value>
+          </set-header>
+          <set-body>{"error":{"code":"key_in_url","message":"Send the subscription key in the api-key header, not in the URL."}}</set-body>
+        </return-response>
+      </when>
+    </choose>
+
+    <set-variable name="user" value="@(context.Subscription?.Name ?? &quot;anonymous&quot;)" />
+    <rate-limit-by-key calls="120" renewal-period="60"
+        counter-key="@(&quot;emb-&quot; + (context.Subscription?.Id ?? context.Request.IpAddress))" />
+
+    <set-variable name="body" value="@(context.Request.Body.As&lt;JObject&gt;(preserveContent: true))" />
+    <set-variable name="routedModel" value="@{
+        var m = (string)((JObject)context.Variables[&quot;body&quot;])[&quot;model&quot;] ?? &quot;&quot;;
+        return (m.Length == 0 || m == &quot;heimdal-auto&quot; || m == &quot;auto&quot;) ? &quot;{{model-embedding}}&quot; : m;
+    }" />
+    <set-body>@{
+        var b = (JObject)context.Variables["body"];
+        b["model"] = (string)context.Variables["routedModel"];
+        return b.ToString();
+    }</set-body>
+
+    <set-backend-service backend-id="asgard-foundry" />
+    <authentication-managed-identity resource="https://cognitiveservices.azure.com" />
+    <set-header name="api-key" exists-action="delete" />
+    <set-query-parameter name="api-version" exists-action="delete" />
+  </inbound>
+
+  <backend>
+    <forward-request />
+  </backend>
+
+  <outbound>
+    <choose>
+      <when condition="@(context.Response.StatusCode == 200)">
+        <emit-metric name="Embedding Tokens" namespace="heimdal"
+            value="@{
+                var usage = context.Response.Body.As&lt;JObject&gt;(preserveContent: true)[&quot;usage&quot;];
+                return usage == null ? 0 : (double)usage[&quot;total_tokens&quot;];
+            }">
+          <dimension name="User" value="@((string)context.Variables[&quot;user&quot;])" />
+          <dimension name="Model" value="@((string)context.Variables[&quot;routedModel&quot;])" />
+          <dimension name="Agent" value="@(context.Request.Headers.GetValueOrDefault(&quot;x-agent&quot;, &quot;none&quot;))" />
+        </emit-metric>
+      </when>
+    </choose>
+    <set-header name="x-heimdal-user" exists-action="override">
+      <value>@((string)context.Variables["user"])</value>
+    </set-header>
+    <set-header name="x-heimdal-model" exists-action="override">
+      <value>@((string)context.Variables["routedModel"])</value>
+    </set-header>
+  </outbound>
+
+  <on-error>
+    <base />
+  </on-error>
+</policies>
