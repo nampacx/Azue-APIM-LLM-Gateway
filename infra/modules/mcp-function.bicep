@@ -2,14 +2,18 @@
 param location string
 param functionAppName string
 param planName string
+@minLength(3)
+@maxLength(24)
 param storageName string
 param appInsightsConnectionString string
+@description('Only this subnet (APIM outbound VNet integration) may call the Function; everything else gets 403.')
+param allowedSubnetId string
 param tags object
 
 var deployContainer = 'app-package'
 
 resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
-  name: take(storageName, 24)
+  name: storageName
   location: location
   tags: tags
   sku: { name: 'Standard_LRS' }
@@ -70,6 +74,19 @@ resource func 'Microsoft.Web/sites@2024-04-01' = {
       }
     }
     siteConfig: {
+      // Gateway-only: the MCP endpoint is reachable from APIM's subnet only (clients must go through APIM).
+      ipSecurityRestrictionsDefaultAction: 'Deny'
+      ipSecurityRestrictions: [
+        {
+          name: 'allow-bifrost-apim'
+          action: 'Allow'
+          priority: 100
+          vnetSubnetResourceId: allowedSubnetId
+        }
+      ]
+      // Deployment endpoint (azd / zip deploy) keeps its own, open rules; it is protected by Entra ID.
+      scmIpSecurityRestrictionsUseMain: false
+      scmIpSecurityRestrictionsDefaultAction: 'Allow'
       appSettings: [
         { name: 'AzureWebJobsStorage__accountName', value: storage.name }
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsightsConnectionString }

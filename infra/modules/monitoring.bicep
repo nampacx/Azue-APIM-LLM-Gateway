@@ -26,8 +26,8 @@ resource appi 'Microsoft.Insights/components@2020-02-02' = {
 }
 
 output workspaceId string = log.id
+output workspaceName string = log.name
 output workspaceCustomerId string = log.properties.customerId
 output appInsightsId string = appi.id
 output appInsightsName string = appi.name
-output appInsightsKey string = appi.properties.InstrumentationKey
 output appInsightsConnectionString string = appi.properties.ConnectionString

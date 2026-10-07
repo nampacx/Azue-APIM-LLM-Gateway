@@ -39,6 +39,7 @@ file wins over stale shell variables. Variables used here:
 """
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -55,7 +56,9 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=True)
 
 # Demo users. Each one is an APIM *subscription* with the same name (see infra/modules/apim-apis.bicep);
 # the subscription key is the user's identity for token limits and token metrics.
-USERS = ["thor", "loki", "hulk", "black-widow", "tony-stark"]
+# Same list Bicep deploys: infra/config/heimdal.json (demoUsers).
+CONFIG = json.loads((Path(__file__).resolve().parent.parent / "infra" / "config" / "heimdal.json").read_text(encoding="utf-8"))
+USERS = [u["name"] for u in CONFIG["demoUsers"]]
 
 # Display labels for the ``x-heimdal-tier`` response header. "explicit" means the caller named a
 # concrete deployment (or tier) instead of letting the router choose.

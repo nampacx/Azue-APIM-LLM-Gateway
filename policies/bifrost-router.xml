@@ -15,6 +15,7 @@
         model-tier-pym|stark|thanos, model-classifier
         mai-deployments          comma list of deployments served via /mai/v1 (MAI-Thinking-1)
   4. Rewrite "model" in the body, call Foundry with the gateway's managed identity
+     (POST /chat/completions and POST /responses; /embeddings has its own operation policy, bifrost-embeddings.xml)
   5. Emit per-user token metrics (the All-Seeing Eye) and expose routing decisions as headers
 
   Client overrides (for demos):
@@ -26,15 +27,40 @@
   <inbound>
     <base />
 
+    <!-- keys in URLs end up in logs and browser history: header only -->
+    <choose>
+      <when condition="@(context.Request.Url.Query.ContainsKey(&quot;subscription-key&quot;))">
+        <return-response>
+          <set-status code="400" reason="Bad Request" />
+          <set-header name="Content-Type" exists-action="override">
+            <value>application/json</value>
+          </set-header>
+          <set-body>{"error":{"code":"key_in_url","message":"Send the subscription key in the api-key header, not in the URL."}}</set-body>
+        </return-response>
+      </when>
+    </choose>
+
     <!-- 1. Who is calling? -->
     <set-variable name="user" value="@(context.Subscription?.Name ?? &quot;anonymous&quot;)" />
 
-    <!-- 2. Per-user token limit (premium product gets more) -->
-    <llm-token-limit
-        counter-key="@(context.Subscription?.Id ?? context.Request.IpAddress)"
-        tokens-per-minute="@(context.Product != null &amp;&amp; context.Product.Id == &quot;infinity-gauntlet&quot; ? int.Parse(&quot;{{tpm-premium}}&quot;) : int.Parse(&quot;{{tpm-standard}}&quot;))"
-        estimate-prompt-tokens="true"
-        remaining-tokens-header-name="x-heimdal-remaining-tokens" />
+    <!-- 2. Per-user token limit (premium product gets more). One static limit per branch: the named value is
+         resolved when the policy loads, so tokens-per-minute needs no policy expression. -->
+    <choose>
+      <when condition="@(context.Product?.Id == &quot;infinity-gauntlet&quot;)">
+        <llm-token-limit
+            counter-key="@(context.Subscription?.Id ?? context.Request.IpAddress)"
+            tokens-per-minute="{{tpm-premium}}"
+            estimate-prompt-tokens="true"
+            remaining-tokens-header-name="x-heimdal-remaining-tokens" />
+      </when>
+      <otherwise>
+        <llm-token-limit
+            counter-key="@(context.Subscription?.Id ?? context.Request.IpAddress)"
+            tokens-per-minute="{{tpm-standard}}"
+            estimate-prompt-tokens="true"
+            remaining-tokens-header-name="x-heimdal-remaining-tokens" />
+      </otherwise>
+    </choose>
 
     <!-- 3a. Read the request once -->
     <set-variable name="body" value="@(context.Request.Body.As&lt;JObject&gt;(preserveContent: true))" />
@@ -44,27 +70,41 @@
         var m = b[&quot;model&quot;];
         return m == null ? &quot;&quot; : ((string)m ?? &quot;&quot;);
     }" />
+    <!-- SDKs require a model, so "heimdal-auto" / "auto" mean the same as no model: the router decides -->
+    <set-variable name="isAuto" value="@{
+        string r = (string)context.Variables[&quot;requestedModel&quot;];
+        return r.Length == 0 || r == &quot;heimdal-auto&quot; || r == &quot;auto&quot;;
+    }" />
 
-    <!-- Concatenated text of all messages -->
+    <!-- Concatenated prompt text: chat completions (messages[]) or Responses API (instructions + input as string or items[]) -->
     <set-variable name="promptText" value="@{
         var b = (JObject)context.Variables[&quot;body&quot;];
-        var msgs = b[&quot;messages&quot;] as JArray;
         string text = &quot;&quot;;
-        if (msgs != null) {
-            foreach (var m in msgs) {
-                var c = m[&quot;content&quot;];
+        var instructions = b[&quot;instructions&quot;];
+        if (instructions != null &amp;&amp; instructions.Type == JTokenType.String) { text += (string)instructions + &quot;\n&quot;; }
+        var input = b[&quot;input&quot;];
+        if (input != null &amp;&amp; input.Type == JTokenType.String) { text += (string)input + &quot;\n&quot;; }
+        var items = (b[&quot;messages&quot;] as JArray) ?? (input as JArray);
+        if (items != null) {
+            foreach (var m in items) {
+                var c = m.Type == JTokenType.Object ? m[&quot;content&quot;] : null;
                 if (c == null) { continue; }
                 if (c.Type == JTokenType.String) {
                     text += (string)c + &quot;\n&quot;;
                 } else if (c.Type == JTokenType.Array) {
                     foreach (var part in (JArray)c) {
-                        var t = part[&quot;text&quot;];
+                        var t = part.Type == JTokenType.Object ? part[&quot;text&quot;] : null;
                         if (t != null) { text += (string)t + &quot;\n&quot;; }
                     }
                 }
             }
         }
         return text;
+    }" />
+    <set-variable name="messageCount" value="@{
+        var b = (JObject)context.Variables[&quot;body&quot;];
+        var items = (b[&quot;messages&quot;] as JArray) ?? (b[&quot;input&quot;] as JArray);
+        return items == null ? 1 : items.Count;
     }" />
 
     <!-- 3b. Length signal: estimated prompt tokens -> tier index 0|1|2 -->
@@ -78,7 +118,6 @@
     <!-- 3c. Complexity signal (heuristic): score -> tier index -->
     <set-variable name="complexityScore" value="@{
         string text = ((string)context.Variables[&quot;promptText&quot;]).ToLowerInvariant();
-        var b = (JObject)context.Variables[&quot;body&quot;];
         int score = 0;
 
         // code or query-like content
@@ -99,8 +138,7 @@
         if (text.Contains(&quot;integral&quot;) || text.Contains(&quot;theorem&quot;) || text.Contains(&quot;equation&quot;) || text.Contains(&quot;probability&quot;)) { score += 1; }
 
         // long conversations
-        var msgs = b[&quot;messages&quot;] as JArray;
-        if (msgs != null &amp;&amp; msgs.Count &gt; 6) { score += 1; }
+        if ((int)context.Variables[&quot;messageCount&quot;] &gt; 6) { score += 1; }
 
         return score;
     }" />
@@ -113,7 +151,7 @@
     <!-- 3d. Complexity signal (LLM classifier), only when configured; falls back to heuristic -->
     <set-variable name="llmTier" value="@(-1)" />
     <choose>
-      <when condition="@(&quot;{{router-mode}}&quot; != &quot;length&quot; &amp;&amp; &quot;{{complexity-mode}}&quot; == &quot;llm&quot; &amp;&amp; ((string)context.Variables[&quot;requestedModel&quot;]).Length &lt; 1)">
+      <when condition="@(&quot;{{router-mode}}&quot; != &quot;length&quot; &amp;&amp; &quot;{{complexity-mode}}&quot; == &quot;llm&quot; &amp;&amp; (bool)context.Variables[&quot;isAuto&quot;])">
         <send-request mode="new" response-variable-name="classifierResponse" timeout="15" ignore-error="true">
           <set-url>@("{{foundry-openai-base}}/chat/completions")</set-url>
           <set-method>POST</set-method>
@@ -157,7 +195,7 @@
         if (requested == &quot;tier-pym&quot;) { return &quot;pym&quot;; }
         if (requested == &quot;tier-stark&quot;) { return &quot;stark&quot;; }
         if (requested == &quot;tier-thanos&quot;) { return &quot;thanos&quot;; }
-        if (requested.Length &gt; 0 &amp;&amp; requested != &quot;heimdal-auto&quot; &amp;&amp; requested != &quot;auto&quot;) { return &quot;explicit&quot;; }
+        if (!(bool)context.Variables[&quot;isAuto&quot;]) { return &quot;explicit&quot;; }
 
         string mode = &quot;{{router-mode}}&quot;;
         int lengthTier = (int)context.Variables[&quot;lengthTier&quot;];
@@ -190,7 +228,7 @@
     <set-body>@{
         var b = (JObject)context.Variables["body"];
         b["model"] = (string)context.Variables["routedModel"];
-        // MAI models only accept max_completion_tokens
+        // MAI models only accept max_completion_tokens (chat completions)
         if ((bool)context.Variables["isMai"] &amp;&amp; b["max_tokens"] != null) {
             b["max_completion_tokens"] = b["max_tokens"];
             b.Remove("max_tokens");
