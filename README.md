@@ -13,7 +13,7 @@ A demo showcase of **Azure API Management (APIM) as an AI gateway**: one endpoin
 Models run in **Microsoft Foundry** ☁️, infrastructure is **Bicep** 🦾 in **Sweden Central** 🇸🇪, custom code is **Python only** 🐍.
 Public endpoints (demo); APIM's outbound VNet integration locks the MCP Function so only the gateway can reach it.
 
-📚 **Docs:** [📖 story.md](story.md) – the notebooks as a story · [🌈 docs/apim-definition.md](docs/apim-definition.md) – what is set up in APIM · [🔍 docs/apim-integration.md](docs/apim-integration.md) – how it works · [🛡️ docs/user.md](docs/user.md) – how APIM identifies the user
+📚 **Docs:** [📖 story.md](story.md) – the notebooks as a story · [🌈 docs/apim-definition.md](docs/apim-definition.md) – what is set up in APIM · [🔍 docs/apim-integration.md](docs/apim-integration.md) – how it works · [🛡️ docs/user.md](docs/user.md) – how APIM identifies the user · [📊 docs/workbook.md](docs/workbook.md) – what the Azure workbook shows
 
 ```mermaid
 flowchart LR
