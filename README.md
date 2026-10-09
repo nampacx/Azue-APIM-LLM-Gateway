@@ -50,8 +50,8 @@ flowchart LR
 | `policies/bifrost-embeddings.xml` | `/embeddings`: no router, rate limit, embedding deployment, `Embedding Tokens` metric |
 | `policies/shield-mcp.xml` | MCP rate limit + function key injection |
 | `src/shield-mcp/` | Python Azure Function (MCP extension) with MCU tools |
-| `azure.yaml`, `infra/azd/` | `azd up` entry point (subscription-scope wrapper, preprovision hook `scripts/ollama_tunnel.py`, postdeploy hook `scripts/azd_hook.py`) |
-| `scripts/deploy.py`, `teardown.py` | Python wrappers around `az` (alternative to azd); write `.env` for the notebooks |
+| `azure.yaml`, `infra/azd/` | **Primary deploy path**: `azd up` entry point (subscription-scope wrapper, preprovision hook `scripts/ollama_tunnel.py` for the optional local Ollama, postdeploy hook `scripts/azd_hook.py`) |
+| `scripts/deploy.py`, `teardown.py` | Python wrappers around `az` (alternative to azd); `azd_hook.py` is the azd postdeploy hook. Both write `.env` for the notebooks |
 | `infra/workbooks/` | Azure Monitor workbook: token usage per user / model per user, local Ollama calls vs Foundry |
 | `docs/` | [APIM definition](docs/apim-definition.md) and [integration deep dive](docs/apim-integration.md) |
 | `notebooks/` | `00`–`09` demos (below), story in [story.md](story.md) |
@@ -61,76 +61,120 @@ flowchart LR
 `func-heimdal-shield-mcp-*` · products `avengers-initiative` / `infinity-gauntlet` · users `thor, loki, hulk, black-widow, tony-stark` ·
 tiers `pym` / `stark` / `thanos`.
 
-## 🚀 Deploy
+## 🚀 Deploy with `azd`
 
-Prereqs: Azure CLI (`az login`), Python 3.11+, permission to create APIM/Foundry/Function/VNet resources and role assignments, quota for the models.
+> 💡 **TL;DR:** `azd up` is the way to deploy. Set two values (`AZURE_LOCATION`, `HEIMDAL_PUBLISHER_EMAIL`), run `azd up`, wait ~20–40 min (APIM). The postdeploy hook writes `.env` for the notebooks.
+
+**Prereqs:** [Azure Developer CLI](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd) (`azd`), Azure CLI (`az`), Python 3.11+, permission to create APIM/Foundry/Function/VNet resources and role assignments, and quota for the models.
+The postdeploy hook calls `az` and `python`, so sign in to both: `azd auth login` **and** `az login`.
 The deployment grants the signed-in user *Azure AI User* (Foundry) and *Log Analytics Reader* for the notebooks.
 
 ```bash
 pip install -r requirements.txt
-python scripts/deploy.py --check-models                # are the models in swedencentral? (edit infra/config/heimdal.json)
-python scripts/deploy.py --email you@contoso.com       # ~20-40 min (APIM), writes .env
+azd auth login && az login
+azd env new heimdal-dev
+azd env set AZURE_LOCATION swedencentral          # required: model availability, see below
+azd env set HEIMDAL_PUBLISHER_EMAIL you@contoso.com
+azd up
 ```
 
+`azd up` runs these steps:
+
+| Step | 🔧 What happens |
+|---|---|
+| 0. preprovision | [scripts/ollama_tunnel.py](scripts/ollama_tunnel.py) prepares the optional local Ollama + ngrok tunnel. Does nothing unless `HEIMDAL_ENABLE_OLLAMA=true` |
+| 1. provision | [infra/azd/main.bicep](infra/azd/main.bicep) creates `rg-heimdal-asgard-<env>` and deploys [infra/main.bicep](infra/main.bicep) into it |
+| 2. deploy | Publishes the Python Function in [src/shield-mcp](src/shield-mcp) |
+| 3. postdeploy | [scripts/azd_hook.py](scripts/azd_hook.py) injects the Function MCP key into the APIM named value `shield-mcp-key`, saves it as `HEIMDAL_MCP_KEY` and writes `.env` |
+
+### 🎚️ azd parameters
+
+Set with `azd env set <NAME> <value>`. Values are mapped to Bicep parameters in [infra/azd/main.parameters.json](infra/azd/main.parameters.json).
+
+| 🔑 Variable | Bicep parameter | Set it? | Default | Meaning |
+|---|---|---|---|---|
+| `AZURE_ENV_NAME` | `environmentName` | ✅ by `azd env new` | – | Env name, max 32 chars. Becomes the resource group `rg-heimdal-asgard-<env>` |
+| `AZURE_LOCATION` | `location` | ✅ **required** | – | Use `swedencentral` (models are verified there) |
+| `HEIMDAL_PUBLISHER_EMAIL` | `publisherEmail` | ✅ **required** | – | APIM publisher e-mail |
+| `HEIMDAL_ENABLE_MAI` | `enableMai` | optional | `false` | `true` deploys `MAI-Thinking-1` (needs quota, see below) |
+| `HEIMDAL_ENABLE_OLLAMA` | `enableOllama` | optional | `false` | `true` adds the local Ollama backend via ngrok (see [below](#-local-ollama-via-ngrok-optional)) |
+| `HEIMDAL_OLLAMA_MODEL` | – (hook) | optional | `llama3.2` | Ollama model(s) to serve, comma-separated |
+| `HEIMDAL_OLLAMA_NGROK_DOMAIN` | – (hook) | optional | empty | Fixed ngrok domain; empty = the URL ngrok assigns |
+| `AZURE_SUBSCRIPTION_ID` | – | ✅ asked by `azd up` | – | Target subscription |
+| `AZURE_PRINCIPAL_ID` / `AZURE_PRINCIPAL_TYPE` | `principalId` / `principalType` | 🤖 azd fills it | empty / `User` | Gets the Foundry and Log Analytics data roles |
+| `HEIMDAL_MCP_KEY` | `mcpKey` | 🤖 hook sets it | empty | Function MCP key; keeps `shield-mcp-key` intact on a later `azd provision`. Don't set it by hand |
+| `HEIMDAL_OLLAMA_URL` / `HEIMDAL_OLLAMA_MODELS` / `HEIMDAL_OLLAMA_AUTH` | `ollamaUrl` / `ollamaModels` / `ollamaAuth` | 🤖 Ollama hook sets them | empty | Tunnel URL, served models and the tunnel's basic-auth secret. Don't set them by hand |
+
+Set at the end of provisioning (outputs, used by the hook): `AZURE_RESOURCE_GROUP`, `HEIMDAL_APIM_NAME`, `HEIMDAL_GATEWAY_URL`, `HEIMDAL_FOUNDRY_ACCOUNT`, `HEIMDAL_FOUNDRY_PROJECT`, `HEIMDAL_FOUNDRY_CONNECTION`, `HEIMDAL_FUNCTION_APP`, `HEIMDAL_APPINSIGHTS`, `HEIMDAL_LOG_WORKSPACE_ID`, `HEIMDAL_WORKBOOK_ID`, `HEIMDAL_OLLAMA_ENABLED`.
+
+> ⚠️ **Not an azd variable:** the APIM SKU (`StandardV2`), models, tiers, router defaults, token limits and demo users. Edit [infra/config/heimdal.json](infra/config/heimdal.json) (and `apimSku` in [infra/main.bicep](infra/main.bicep)), then run `azd provision` or `azd up` again.
+
 > **Models** (verified against [Models sold directly by Azure](https://learn.microsoft.com/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure)): `gpt-6-luna` version `2026-09-22`, `gpt-5.6-terra` version `2026-07-09`, `gpt-6.1-sol` version `2026-09-29`, `text-embedding-3-small` version `1` (for `/embeddings`), `MAI-Thinking-1` (preview, format `Microsoft`) version `2026-06-01`, all `GlobalStandard` in Sweden Central.
-> MAI-Thinking-1 is served on `/mai/v1` (not `/openai/v1`) and needs `max_completion_tokens`; the router handles both via the `mai-deployments` named value. Its default quota tier can be 0 TPM – request quota if deployment fails.
-> Edit `models` / `tierModels` in `infra/config/heimdal.json` to use other deployments – both `deploy.py` and `azd` pick it up.
+> MAI-Thinking-1 is served on `/mai/v1` (not `/openai/v1`) and needs `max_completion_tokens`; the router handles both via the `mai-deployments` named value.
 
 #### 🧠 MAI-Thinking-1 quota (optional top tier)
 `MAI-Thinking-1` has **0 default quota**, so it is **off by default**: the `thanos` tier falls back to `gpt-6.1-sol`.
 1. Request quota: Foundry portal → **Manage → Quota** → pick the model/region (Sweden Central, GlobalStandard) → **Request quota**, or use the [quota request form](https://aka.ms/oai/stuquotarequest). Needs Owner/Contributor on the subscription; approval can take days, and allow ~15 min to propagate.
-2. Once approved, enable it: `export HEIMDAL_ENABLE_MAI=true` (scripts) or `azd env set HEIMDAL_ENABLE_MAI true`, then redeploy. The router then maps `thanos` → `mai-thinking-1` automatically.
+2. Once approved: `azd env set HEIMDAL_ENABLE_MAI true`, then `azd provision`. The router then maps `thanos` → `mai-thinking-1` automatically.
 
-### ⚡ Or deploy with `azd` (Azure Developer CLI)
+### 🔁 Day-2 commands
+
+| Command | Does |
+|---|---|
+| `azd provision` | Re-apply the Bicep (after editing `heimdal.json`) |
+| `azd deploy` | Re-publish the Function only |
+| `azd env get-values` | Show all values above |
+| `azd down --purge` | 🧹 Delete everything (purge frees the soft-deleted Foundry account) |
+
+### 🛠️ Alternative: Python scripts (no azd)
+
+Same Bicep, driven by [scripts/deploy.py](scripts/deploy.py) and `az`. Writes the same `.env`. It reads `HEIMDAL_PUBLISHER_EMAIL` / `HEIMDAL_ENABLE_MAI` from the shell environment and uses the fixed resource group `rg-heimdal-asgard-swc`.
 
 ```bash
-azd auth login
-azd env new heimdal-dev
-azd env set AZURE_LOCATION swedencentral   # required: azd uses it as the deployment location
-azd env set HEIMDAL_PUBLISHER_EMAIL you@contoso.com
-azd up        # provisions infra/azd -> infra/main.bicep, deploys src/shield-mcp, postdeploy hook wires the MCP key + writes .env
+pip install -r requirements.txt
+python scripts/deploy.py --check-models                # are the models in swedencentral?
+python scripts/deploy.py --email you@contoso.com       # ~20-40 min (APIM), writes .env
+python scripts/teardown.py                             # remove it again
 ```
-
-`azd down --purge` removes everything. `azd` creates the resource group `rg-heimdal-asgard-<env>`.
-The postdeploy hook stores the Function MCP key as `HEIMDAL_MCP_KEY` in the azd environment, so a later `azd provision`
-keeps the `shield-mcp-key` named value intact.
 
 ### 🦙 Local Ollama via ngrok (optional)
 
-Serve a model from **your own machine** through the gateway, next to the Foundry models. Requests with that model
-name go through APIM → ngrok → your local Ollama, with the same keys, token limits, metrics and `x-heimdal-*` headers.
+> 💡 **TL;DR:** Serve a model from **your own machine** through the gateway, next to the Foundry models. Set `HEIMDAL_ENABLE_OLLAMA=true` and a model, run `azd up`. Calls with that model name go APIM → ngrok → your Ollama, with the same keys, token limits, metrics and `x-heimdal-*` headers.
 
-Prereqs: [Ollama](https://ollama.com/download) and [ngrok](https://ngrok.com/download) installed, plus
-`ngrok config add-authtoken <token>` once ([free account](https://dashboard.ngrok.com/get-started/your-authtoken)).
+**Prereqs:** [Ollama](https://ollama.com/download) and [ngrok](https://ngrok.com/download) installed, plus `ngrok config add-authtoken <token>` once ([free account](https://dashboard.ngrok.com/get-started/your-authtoken)).
 
 ```bash
 azd env set HEIMDAL_ENABLE_OLLAMA true
-azd env set HEIMDAL_OLLAMA_MODEL llama3.2               # any model from ollama.com/library, comma-separated for several
-# azd env set HEIMDAL_OLLAMA_NGROK_DOMAIN you.ngrok-free.app   # optional fixed domain
-azd up                                                  # or azd provision
+azd env set HEIMDAL_OLLAMA_MODEL llama3.2                     # any model from ollama.com/library, comma-separated for several
+# azd env set HEIMDAL_OLLAMA_NGROK_DOMAIN you.ngrok-free.app  # optional fixed domain
+azd up                                                        # or azd provision
 ```
 
-The `preprovision` hook (`scripts/ollama_tunnel.py`) does the following:
-- checks that `ollama` is installed, starts `ollama serve` if nothing answers on `:11434`, and runs `ollama pull` for missing models;
-- checks that `ngrok` is installed and configured, and starts `ngrok http 11434` if no tunnel exists;
-- protects the tunnel with an ngrok traffic policy: **basic auth** (a generated secret, stored as `HEIMDAL_OLLAMA_AUTH` in the azd env) and a Host rewrite;
-- verifies the tunnel (401 without credentials, model list with credentials) and stores `HEIMDAL_OLLAMA_URL` / `HEIMDAL_OLLAMA_MODELS` for Bicep.
+What the `preprovision` hook ([scripts/ollama_tunnel.py](scripts/ollama_tunnel.py)) does:
+
+| Step | 🔧 What happens |
+|---|---|
+| 🦙 Ollama | Checks that `ollama` is installed, starts `ollama serve` if nothing answers on `:11434`, runs `ollama pull` for missing models |
+| 🚇 ngrok | Checks that `ngrok` is installed and configured, starts `ngrok http 11434` if no tunnel exists |
+| 🔒 Protect | ngrok traffic policy: **basic auth** (a generated secret, stored as `HEIMDAL_OLLAMA_AUTH`) and a Host rewrite to `localhost` |
+| ✅ Verify | 401 without credentials, model list with credentials. Stores `HEIMDAL_OLLAMA_URL` / `HEIMDAL_OLLAMA_MODELS` for Bicep |
 
 Bicep then adds the `asgard-ollama` backend and the `ollama-models` / `ollama-basic-auth` named values.
 
 ```python
-ask("Who guards the Bifrost?", user="thor", model="llama3.2")   # x-heimdal-route-reason: local-ollama;...
+ask("Who guards the Bifrost?", user="thor", model="llama3.2",
+    max_completion_tokens=400, reasoning_effort="none")   # x-heimdal-route-reason: local-ollama;...
 ```
 
 The full walkthrough is notebook [`09_local_ollama_via_bifrost`](notebooks/09_local_ollama_via_bifrost.ipynb).
 
-- 🔁 **The tunnel URL changes when ngrok restarts** (unless you set a fixed domain). Re-run `azd provision` and the hook picks up the new URL.
-- 🪵 **Is the local model used?** Every call's backend is in `ApiManagementGatewayLogs.BackendId` (`asgard-ollama`). The workbook *Heimdal - LLM token usage* → section **Local Ollama via ngrok** shows local calls, tokens, latency and failures next to Foundry. `KQL_CALLS_BY_BACKEND` in `notebooks/heimdal_helpers.py` gives the same view in Python.
+- 🔁 **The tunnel URL changes when ngrok restarts** (unless you set a fixed domain). Run `azd provision` again and the hook picks up the new URL.
+- 🔢 Send `max_completion_tokens`. The gateway renames it to `max_tokens` for Ollama, which only honours that one.
+- 🧠 Small local models are often reasoning models (`qwen3.5`, `deepseek-r1`). If the answer is empty, the token budget went into thinking: send `reasoning_effort="none"`.
+- 🪵 **Is the local model used?** Every call's backend is in `ApiManagementGatewayLogs.BackendId` (`asgard-ollama`). See [docs/workbook.md](docs/workbook.md) section 8, or `KQL_CALLS_BY_BACKEND` in `notebooks/heimdal_helpers.py`.
 - 🛑 `python scripts/ollama_tunnel.py --stop` stops the `ollama` / `ngrok` processes the hook started. Logs and the generated policy are in `.azure/<env>/` (`.ollama-tunnel/` without azd).
-- 📶 Your machine must stay on, and the free ngrok plan has a monthly transfer cap. Local inference is slow compared to Foundry.
-- Non-azd: `HEIMDAL_ENABLE_OLLAMA=true python scripts/deploy.py --email ...` runs the same checks.
-
-🧹 Teardown (non-azd): `python scripts/teardown.py`.
+- 📶 Your machine must stay on, and the free ngrok plan has a monthly transfer cap. Local inference is slower than Foundry.
+- 🛠️ Without azd: `HEIMDAL_ENABLE_OLLAMA=true python scripts/deploy.py --email ...` runs the same checks.
 
 ## 🎬 Demo flow (notebooks)
 
@@ -171,7 +215,7 @@ Routing applies to `POST /chat/completions` and `POST /responses`; `POST /embedd
 ## ⚠️ Known notes / caveats
 - 📊 **Token metrics** (dimensions `User`, `Model`, `Tier`, `Agent` via the `x-agent` header, `API ID`) require *Custom metrics with dimensions* on the App Insights resource (Usage & estimated costs → Custom metrics → With dimensions; usually default for new workspace-based resources). For streaming, send `stream_options={"include_usage": true}`.
 - ⏱️ Logs/metrics lag a few minutes. The LLM logs table (`ApiManagementGatewayLlmLog`) gives exact per-request tokens and model.
-- 🔌 MCP is a plain HTTP API in APIM (streamable HTTP forwarded unbuffered; the preview `type: mcp` API returned 500 here). The Function MCP extension needs the `mcp_extension` system key; `deploy.py` / the azd hook inject it into the `shield-mcp-key` named value after code publish and pass it to later deployments (`mcpKey` parameter).
+- 🔌 MCP is a plain HTTP API in APIM (streamable HTTP forwarded unbuffered; the preview `type: mcp` API returned 500 here). The Function MCP extension needs the `mcp_extension` system key; the azd hook (or `deploy.py`) injects it into the `shield-mcp-key` named value after code publish and passes it to later deployments (`mcpKey` parameter).
 - 🔒 The Function only accepts traffic from APIM's outbound VNet subnet (access restrictions); calling it directly returns 403.
 - 🔑 Send subscription keys in the `api-key` header – keys in the URL (`?subscription-key=`) are rejected with 400.
 - 🧪 Foundry connection (notebook 07) and Agent Framework (notebook 08) use preview SDK/APIs – adjust to current docs if signatures changed.
