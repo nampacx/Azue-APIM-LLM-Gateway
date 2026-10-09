@@ -236,6 +236,12 @@
             b["max_completion_tokens"] = b["max_tokens"];
             b.Remove("max_tokens");
         }
+        // Ollama's OpenAI surface only honours max_tokens (it ignores max_completion_tokens), Foundry GPT models only
+        // accept max_completion_tokens: clients send max_completion_tokens, the gateway translates for Ollama
+        if ((bool)context.Variables["isOllama"] &amp;&amp; b["max_completion_tokens"] != null) {
+            if (b["max_tokens"] == null) { b["max_tokens"] = b["max_completion_tokens"]; }
+            b.Remove("max_completion_tokens");
+        }
         return b.ToString();
     }</set-body>
     <choose>

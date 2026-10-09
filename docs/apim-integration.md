@@ -120,7 +120,9 @@ fills `{{ollama-models}}`, and stores the credentials base64-encoded in the secr
 
 When the routed model is in `{{ollama-models}}`, the policy selects `asgard-ollama`. It skips the managed identity
 and sends `Authorization: Basic {{ollama-basic-auth}}`, overriding the client's `Authorization` header, plus
-`ngrok-skip-browser-warning`. `x-heimdal-route-reason` is prefixed with `local-ollama;`. Token limits and token
+`ngrok-skip-browser-warning`. `x-heimdal-route-reason` is prefixed with `local-ollama;`. Ollama only honours `max_tokens` (it ignores
+`max_completion_tokens`), while Foundry GPT models only accept `max_completion_tokens`. Clients therefore send
+`max_completion_tokens`, and the policy renames it to `max_tokens` for Ollama. Token limits and token
 metrics work unchanged, because Ollama returns OpenAI-style `usage`. `/embeddings` uses the same check, for example
 for `nomic-embed-text`. Because the check runs on the *routed* model, a tier named value
 (`model-tier-pym` = `llama3.2`) can also send a whole tier to the local model.
