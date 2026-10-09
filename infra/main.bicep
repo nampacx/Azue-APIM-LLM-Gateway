@@ -203,6 +203,7 @@ module foundryConnection 'modules/foundry-connection.bicep' = {
     apimName: apim.outputs.name
     llmBaseUrl: '${apim.outputs.gatewayUrl}/${apis.outputs.llmPath}'
     subscriptionName: foundryAgentUser
+    extraModels: ollamaOn ? map(split(ollamaModels, ','), m => trim(m)) : [] // local Ollama models for Foundry agents
   }
 }
 

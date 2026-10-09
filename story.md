@@ -58,8 +58,8 @@ The `x-agent` header tags the traffic so the agent appears as its own `Agent` di
 ### 🦙 09 · `09_local_ollama_via_bifrost` – Heimdall's local lane *(optional)*
 A model on the **demo laptop** joins the realm. Ollama serves it, and an ngrok tunnel protected by basic auth connects it to APIM (backend `asgard-ollama`).
 Clients only change the `model` name. The notebook compares local and Foundry answers side by side, streams through the tunnel, and shows that
-the tunnel refuses direct calls. It also sends the whole `pym` tier to the laptop for a moment and finds the local calls in the token metrics and in the gateway log (`BackendId = asgard-ollama`). The same view is in the workbook section *Local Ollama via ngrok*.
-*(Needs `HEIMDAL_ENABLE_OLLAMA=true` at deploy time and the laptop online. See README → Local Ollama via ngrok.)*
+the tunnel refuses direct calls. It also sends the whole `pym` tier to the laptop for a moment, runs a **Foundry agent** on the local model (`bifrost-apim/<model>`, attributed to `black-widow`), and finds the local calls in the token metrics and in the gateway log (`BackendId = asgard-ollama`). The same view is in the workbook section *Local Ollama via ngrok*.
+*(Needs `HEIMDAL_ENABLE_OLLAMA=true` at deploy time and the laptop online. See [docs/local-ollama.md](docs/local-ollama.md).)*
 
 ## 🧰 Helper
 [`notebooks/heimdal_helpers.py`](notebooks/heimdal_helpers.py) holds the shared code: `client()`, `ask()` (returns the routing headers),

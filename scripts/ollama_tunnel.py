@@ -14,7 +14,7 @@ Usage:
 
 Settings (azd env or environment):
     HEIMDAL_ENABLE_OLLAMA        true to enable (default false)
-    HEIMDAL_OLLAMA_MODEL         model(s) to serve, comma-separated (default llama3.2)
+    HEIMDAL_OLLAMA_MODEL         model(s) to serve, comma-separated (default gemma4:e4b, served as gemma4-e4b)
     HEIMDAL_OLLAMA_NGROK_DOMAIN  optional static ngrok domain, e.g. my-name.ngrok-free.app
 """
 from __future__ import annotations
@@ -38,7 +38,7 @@ ROOT = Path(__file__).resolve().parent.parent
 OLLAMA_PORT = 11434
 OLLAMA_LOCAL = f"http://localhost:{OLLAMA_PORT}"
 NGROK_API_PORTS = range(4040, 4046)  # each ngrok agent takes the next free inspection port
-DEFAULT_MODEL = "llama3.2"
+DEFAULT_MODEL = "gemma4:e4b"  # small, no reasoning mode: answers directly
 AUTH_USER = "heimdal"
 
 
@@ -154,7 +154,15 @@ def has_model(installed: list[str], model: str) -> bool:
     return wanted in installed or model in installed
 
 
-def ensure_ollama(models: list[str], state: dict) -> None:
+def gateway_name(model: str) -> str:
+    """Name the gateway (and Foundry agents) use: Foundry model ids only allow letters, digits, '-', '_' and '.',
+    so 'gemma4:e4b' becomes 'gemma4-e4b'. 'llama3.2' / 'llama3.2:latest' stay 'llama3.2'."""
+    name, _, tag = model.partition(":")
+    return name if tag in ("", "latest") else f"{name}-{tag}"
+
+
+def ensure_ollama(models: list[str], state: dict) -> list[str]:
+    """Ollama serving + models pulled. Returns the gateway names (Foundry-safe aliases created with `ollama cp`)."""
     exe = shutil.which("ollama")
     if not exe:
         fail("Ollama is not installed. Install it from https://ollama.com/download "
@@ -178,6 +186,17 @@ def ensure_ollama(models: list[str], state: dict) -> None:
         log(f"Model '{model}' not found locally - running `ollama pull {model}`...")
         if subprocess.run([exe, "pull", model]).returncode != 0:
             fail(f"`ollama pull {model}` failed. Check the model name at https://ollama.com/library.")
+    # Foundry-safe aliases: `ollama cp` only adds a name for the same weights (no download, no extra disk).
+    installed = ollama_models() or []
+    names = []
+    for model in models:
+        alias = gateway_name(model)
+        if alias != model.partition(":")[0] and not has_model(installed, alias):
+            if subprocess.run([exe, "cp", model, alias], capture_output=True, text=True).returncode != 0:
+                fail(f"`ollama cp {model} {alias}` failed.")
+            log(f"Alias '{alias}' -> '{model}' created (Foundry model names cannot contain ':').")
+        names.append(alias)
+    return names
 
 
 # ---- ngrok -----------------------------------------------------------------
@@ -280,7 +299,7 @@ def ensure() -> dict[str, str]:
     models = [m.strip() for m in setting("HEIMDAL_OLLAMA_MODEL", DEFAULT_MODEL).split(",") if m.strip()]
     state = load_state()
 
-    ensure_ollama(models, state)
+    models = ensure_ollama(models, state)  # from here on: the gateway names (e.g. gemma4-e4b)
     exe = ensure_ngrok_installed()
     # Tunnel credentials: generated once, kept in the azd env (and the local state file for the non-azd path).
     auth = setting("HEIMDAL_OLLAMA_AUTH") or state.get("auth") or f"{AUTH_USER}:{secrets.token_urlsafe(24)}"
