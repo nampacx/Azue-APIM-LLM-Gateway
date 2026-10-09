@@ -81,6 +81,7 @@ function key alone is not enough to bypass the gateway.
 |---|---|---|
 | `asgard-foundry` | `https://<foundry>.openai.azure.com/openai/v1` | OpenAI models (`gpt-*`) |
 | `asgard-foundry-mai` | `https://<foundry>.services.ai.azure.com/mai/v1` | MAI models (need `max_completion_tokens`) |
+| `asgard-ollama` (optional) | `https://<your>.ngrok-free.app/v1` | Local Ollama models via ngrok (basic auth); only with `HEIMDAL_ENABLE_OLLAMA=true` |
 
 The MCP Function is not a backend object; it is the `serviceUrl` of the `shield-mcp` API.
 
@@ -96,6 +97,8 @@ The MCP Function is not a backend object; it is the `serviceUrl` of the `shield-
 | `model-classifier` | small model | deployment used by the LLM classifier |
 | `model-embedding` | `text-embedding-3-small` | deployment for `/embeddings` with `heimdal-auto` |
 | `mai-deployments` | `none` or list | deployments served on `/mai/v1` |
+| `ollama-models` | `none` or list | models served by the local Ollama backend (`asgard-ollama`) |
+| `ollama-basic-auth` 🔒 | `not-configured` or secret | base64 `user:password` for the ngrok basic-auth in front of Ollama |
 | `foundry-openai-base` | Foundry v1 URL | base URL for the classifier `send-request` |
 | `tpm-standard` / `tpm-premium` | `5000` / `100000` | tokens per minute per product |
 | `shield-mcp-key` 🔒 | set by deploy script | Function `mcp_extension` system key (secret); kept on redeploy via the `mcpKey` parameter |

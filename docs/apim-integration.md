@@ -110,6 +110,21 @@ MAI deployments (`{{mai-deployments}}`, comma list) live on a different endpoint
 backend and renames `max_tokens` → `max_completion_tokens`. If MAI is disabled the named value is `none`
 (named values cannot be empty).
 
+### Local Ollama models (optional)
+
+With `HEIMDAL_ENABLE_OLLAMA=true`, the azd `preprovision` hook (`scripts/ollama_tunnel.py`) makes sure a local
+Ollama is serving the requested model(s) and opens an **ngrok tunnel** to it. The tunnel runs with an ngrok traffic
+policy: `basic-auth` (a generated secret kept in the azd env as `HEIMDAL_OLLAMA_AUTH`) and a Host rewrite to
+`localhost`. Bicep then creates the `asgard-ollama` backend (`<ngrok url>/v1`, Ollama's OpenAI-compatible surface),
+fills `{{ollama-models}}`, and stores the credentials base64-encoded in the secret named value `{{ollama-basic-auth}}`.
+
+When the routed model is in `{{ollama-models}}`, the policy selects `asgard-ollama`. It skips the managed identity
+and sends `Authorization: Basic {{ollama-basic-auth}}`, overriding the client's `Authorization` header, plus
+`ngrok-skip-browser-warning`. `x-heimdal-route-reason` is prefixed with `local-ollama;`. Token limits and token
+metrics work unchanged, because Ollama returns OpenAI-style `usage`. `/embeddings` uses the same check, for example
+for `nomic-embed-text`. Because the check runs on the *routed* model, a tier named value
+(`model-tier-pym` = `llama3.2`) can also send a whole tier to the local model.
+
 ### Response headers (what the client sees)
 
 | Header | Content |
@@ -138,6 +153,8 @@ the policy, so every name used in the XML must exist in `apim.bicep`.
 - The policy requests a token for `https://cognitiveservices.azure.com` with `authentication-managed-identity`.
 - `apim-apis` has `dependsOn: [rbac]` so the roles exist before the first call.
 - The classifier call (`send-request`) authenticates the same way.
+- Exception: the optional local Ollama backend has no Entra identity. The policy sends the ngrok basic-auth
+  credentials from the secret named value `ollama-basic-auth` instead.
 
 ## 5. The MCP API (`shield-mcp`)
 
@@ -223,6 +240,8 @@ Remember that a redeploy of the Bicep resets them to the values in `infra/config
 - **New tier model:** change `tierModels` (and `models`) in `infra/config/heimdal.json` (or set the `model-tier-*` named value live).
 - **New user:** add to `demoUsers` in `infra/config/heimdal.json`; a subscription is created and the deploy script / azd
   hook writes its key to `.env` as `HEIMDAL_KEY_<NAME>`.
+- **Local model:** `azd env set HEIMDAL_ENABLE_OLLAMA true` + `HEIMDAL_OLLAMA_MODEL <name>`, then `azd provision`
+  (see README → *Local Ollama via ngrok*).
 - **New scoring rule:** edit `complexityScore` in `bifrost-router.xml` and redeploy `apim-apis`.
 - **Harden for production:** Entra/JWT validation instead of subscription keys, private endpoints (inbound to APIM,
   Foundry, Function), Key Vault-backed named values, `token-quota` budgets, content safety policies.

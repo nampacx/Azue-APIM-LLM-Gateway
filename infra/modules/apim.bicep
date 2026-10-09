@@ -19,6 +19,15 @@ param tokenLimits object
 @secure()
 @description('Function mcp_extension system key; empty -> placeholder until the deploy script wires it.')
 param mcpKey string
+@description('Create the local Ollama backend (ngrok tunnel).')
+param ollamaEnabled bool = false
+@description('Public ngrok URL of the local Ollama.')
+param ollamaUrl string = ''
+@description('Comma-separated Ollama model names ("none" when disabled).')
+param ollamaModels string = 'none'
+@secure()
+@description('ngrok basic-auth credentials "user:password" for the tunnel.')
+param ollamaAuth string = ''
 param tags object
 
 resource apim 'Microsoft.ApiManagement/service@2025-09-01-preview' = {
@@ -148,6 +157,17 @@ resource maiBackend 'Microsoft.ApiManagement/service/backends@2025-09-01-preview
   }
 }
 
+// Local Ollama on the demo machine, exposed by an ngrok tunnel (basic-auth). OpenAI-compatible surface on /v1.
+resource ollamaBackend 'Microsoft.ApiManagement/service/backends@2025-09-01-preview' = if (ollamaEnabled) {
+  parent: apim
+  name: 'asgard-ollama'
+  properties: {
+    protocol: 'http'
+    url: '${ollamaUrl}/v1'
+    description: 'Local Ollama via ngrok (basic auth from named value ollama-basic-auth)'
+  }
+}
+
 // ---- Router configuration (runtime-tunable named values) ----------------
 var namedValues = [
   { name: 'router-mode', value: router.mode, desc: 'length | complexity | hybrid' }
@@ -158,6 +178,7 @@ var namedValues = [
   { name: 'model-tier-stark', value: tierModels.stark, desc: 'Deployment for medium prompts' }
   { name: 'model-tier-thanos', value: tierModels.thanos, desc: 'Deployment for large/complex/reasoning prompts' }
   { name: 'mai-deployments', value: maiDeployments, desc: 'Deployments served via /mai/v1 (comma-separated)' }
+  { name: 'ollama-models', value: ollamaModels, desc: 'Models served by the local Ollama backend (comma-separated, none = off)' }
   { name: 'model-classifier', value: classifierModel, desc: 'Deployment used for llm complexity classification' }
   { name: 'model-embedding', value: embeddingModel, desc: 'Deployment used by /embeddings for model heimdal-auto' }
   { name: 'foundry-openai-base', value: '${replace(foundryEndpoint, 'cognitiveservices.azure.com', 'openai.azure.com')}/openai/v1', desc: 'Foundry OpenAI v1 base URL' }
@@ -184,6 +205,17 @@ resource mcpKeyNv 'Microsoft.ApiManagement/service/namedValues@2025-09-01-previe
   properties: {
     displayName: 'shield-mcp-key'
     value: empty(mcpKey) ? 'set-by-deploy-script' : mcpKey
+    secret: true
+  }
+}
+
+// Base64 "user:password" for the ngrok basic-auth policy in front of the local Ollama. Always present: the router policy references it.
+resource ollamaAuthNv 'Microsoft.ApiManagement/service/namedValues@2025-09-01-preview' = {
+  parent: apim
+  name: 'ollama-basic-auth'
+  properties: {
+    displayName: 'ollama-basic-auth'
+    value: ollamaEnabled && !empty(ollamaAuth) ? base64(ollamaAuth) : 'not-configured'
     secret: true
   }
 }

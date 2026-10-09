@@ -15,7 +15,10 @@ services:
     host: function
 
 hooks:
-  predeploy:             # nothing to do; kept for symmetry
+  preprovision:          # local Ollama via ngrok (no-op unless HEIMDAL_ENABLE_OLLAMA=true): check/start ollama + ngrok, pull model, set HEIMDAL_OLLAMA_URL
+    posix: { shell: sh, run: 'python scripts/ollama_tunnel.py' }
+    windows: { shell: pwsh, run: 'python scripts/ollama_tunnel.py; exit $LASTEXITCODE' }
+  predeploy:            # nothing to do; kept for symmetry
     posix: { shell: sh, run: 'echo "Deploying S.H.I.E.L.D. MCP function..."' }
     windows: { shell: pwsh, run: 'Write-Host "Deploying S.H.I.E.L.D. MCP function..."' }
   postdeploy:            # wire function key into APIM + write .env for the notebooks

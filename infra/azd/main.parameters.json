@@ -7,6 +7,10 @@
     "publisherEmail": { "value": "${HEIMDAL_PUBLISHER_EMAIL}" },
     "enableMai": { "value": "${HEIMDAL_ENABLE_MAI=false}" },
     "mcpKey": { "value": "${HEIMDAL_MCP_KEY=}" },
+    "enableOllama": { "value": "${HEIMDAL_ENABLE_OLLAMA=false}" },
+    "ollamaUrl": { "value": "${HEIMDAL_OLLAMA_URL=}" },
+    "ollamaModels": { "value": "${HEIMDAL_OLLAMA_MODELS=}" },
+    "ollamaAuth": { "value": "${HEIMDAL_OLLAMA_AUTH=}" },
     "principalId": { "value": "${AZURE_PRINCIPAL_ID=}" },
     "principalType": { "value": "${AZURE_PRINCIPAL_TYPE=User}" }
   }

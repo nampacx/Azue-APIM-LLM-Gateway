@@ -50,7 +50,7 @@ flowchart LR
 | `policies/bifrost-embeddings.xml` | `/embeddings`: no router, rate limit, embedding deployment, `Embedding Tokens` metric |
 | `policies/shield-mcp.xml` | MCP rate limit + function key injection |
 | `src/shield-mcp/` | Python Azure Function (MCP extension) with MCU tools |
-| `azure.yaml`, `infra/azd/` | `azd up` entry point (subscription-scope wrapper + postdeploy hook `scripts/azd_hook.py`) |
+| `azure.yaml`, `infra/azd/` | `azd up` entry point (subscription-scope wrapper, preprovision hook `scripts/ollama_tunnel.py`, postdeploy hook `scripts/azd_hook.py`) |
 | `scripts/deploy.py`, `teardown.py` | Python wrappers around `az` (alternative to azd); write `.env` for the notebooks |
 | `infra/workbooks/` | Azure Monitor workbook: token usage per user / model per user |
 | `docs/` | [APIM definition](docs/apim-definition.md) and [integration deep dive](docs/apim-integration.md) |
@@ -95,6 +95,38 @@ azd up        # provisions infra/azd -> infra/main.bicep, deploys src/shield-mcp
 The postdeploy hook stores the Function MCP key as `HEIMDAL_MCP_KEY` in the azd environment, so a later `azd provision`
 keeps the `shield-mcp-key` named value intact.
 
+### 🦙 Local Ollama via ngrok (optional)
+
+Serve a model from **your own machine** through the gateway, next to the Foundry models. Requests with that model
+name go through APIM → ngrok → your local Ollama, with the same keys, token limits, metrics and `x-heimdal-*` headers.
+
+Prereqs: [Ollama](https://ollama.com/download) and [ngrok](https://ngrok.com/download) installed, plus
+`ngrok config add-authtoken <token>` once ([free account](https://dashboard.ngrok.com/get-started/your-authtoken)).
+
+```bash
+azd env set HEIMDAL_ENABLE_OLLAMA true
+azd env set HEIMDAL_OLLAMA_MODEL llama3.2               # any model from ollama.com/library, comma-separated for several
+# azd env set HEIMDAL_OLLAMA_NGROK_DOMAIN you.ngrok-free.app   # optional fixed domain
+azd up                                                  # or azd provision
+```
+
+The `preprovision` hook (`scripts/ollama_tunnel.py`) does the following:
+- checks that `ollama` is installed, starts `ollama serve` if nothing answers on `:11434`, and runs `ollama pull` for missing models;
+- checks that `ngrok` is installed and configured, and starts `ngrok http 11434` if no tunnel exists;
+- protects the tunnel with an ngrok traffic policy: **basic auth** (a generated secret, stored as `HEIMDAL_OLLAMA_AUTH` in the azd env) and a Host rewrite;
+- verifies the tunnel (401 without credentials, model list with credentials) and stores `HEIMDAL_OLLAMA_URL` / `HEIMDAL_OLLAMA_MODELS` for Bicep.
+
+Bicep then adds the `asgard-ollama` backend and the `ollama-models` / `ollama-basic-auth` named values.
+
+```python
+ask("Who guards the Bifrost?", user="thor", model="llama3.2")   # x-heimdal-route-reason: local-ollama;...
+```
+
+- 🔁 **The tunnel URL changes when ngrok restarts** (unless you set a fixed domain). Re-run `azd provision` and the hook picks up the new URL.
+- 🛑 `python scripts/ollama_tunnel.py --stop` stops the `ollama` / `ngrok` processes the hook started. Logs and the generated policy are in `.azure/<env>/` (`.ollama-tunnel/` without azd).
+- 📶 Your machine must stay on, and the free ngrok plan has a monthly transfer cap. Local inference is slow compared to Foundry.
+- Non-azd: `HEIMDAL_ENABLE_OLLAMA=true python scripts/deploy.py --email ...` runs the same checks.
+
 🧹 Teardown (non-azd): `python scripts/teardown.py`.
 
 ## 🎬 Demo flow (notebooks)
@@ -125,6 +157,7 @@ APIM **named values** (change in portal, `set_router(...)` in notebooks, or Bice
 | `complexity-threshold` | e.g. `3` | score for stark; `2×` for thanos |
 | `model-tier-pym/stark/thanos`, `model-classifier` | deployment names | tier → model mapping |
 | `tpm-standard`, `tpm-premium` | e.g. `5000` | tokens per minute per user by product |
+| `ollama-models` | `none` or e.g. `llama3.2` | models routed to the local Ollama via ngrok (set by the hook; point a `model-tier-*` at one to route a whole tier locally) |
 
 Full list of what is defined in APIM: [docs/apim-definition.md](docs/apim-definition.md).
 

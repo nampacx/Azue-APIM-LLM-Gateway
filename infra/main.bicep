@@ -26,6 +26,19 @@ param apimSku string = 'StandardV2'
 @description('Deploy MAI-Thinking-1 (preview). Needs GlobalStandard quota, which defaults to 0 – request it first, then set true.')
 param enableMai bool = false
 
+@description('Add the local Ollama backend (asgard-ollama) reached through an ngrok tunnel. Prepared by scripts/ollama_tunnel.py.')
+param enableOllama bool = false
+
+@description('Public ngrok URL of the local Ollama (no trailing slash). Empty = backend not created.')
+param ollamaUrl string = ''
+
+@description('Comma-separated Ollama model names; requests with one of these models go to the local backend.')
+param ollamaModels string = ''
+
+@secure()
+@description('ngrok basic-auth credentials "user:password" protecting the tunnel; APIM sends them to the backend.')
+param ollamaAuth string = ''
+
 @description('Foundry project name. (-v2: the original name was blocked by a soft-deleted project during development.)')
 param foundryProjectName string = 'proj-${prefix}-avengers-v2'
 
@@ -67,6 +80,9 @@ param foundryAgentUser string = loadJsonContent('config/heimdal.json', '$.foundr
 
 var activeModels = enableMai ? models : filter(models, m => m.format != 'Microsoft')
 var activeTierModels = enableMai ? union(tierModels, { thanos: loadJsonContent('config/heimdal.json', '$.maiThanosModel') }) : tierModels
+
+// Only wire Ollama when the hook delivered a tunnel URL (a backend URL cannot be empty).
+var ollamaOn = enableOllama && !empty(ollamaUrl) && !empty(ollamaModels)
 
 var tags = {
   project: 'heimdal'
@@ -135,6 +151,10 @@ module apim 'modules/apim.bicep' = {
     router: router
     tokenLimits: tokenLimits
     mcpKey: mcpKey
+    ollamaEnabled: ollamaOn
+    ollamaUrl: ollamaUrl
+    ollamaModels: ollamaOn ? ollamaModels : 'none' // named values cannot be empty
+    ollamaAuth: ollamaAuth
     tags: tags
   }
 }
@@ -197,3 +217,4 @@ output functionAppName string = mcp.outputs.name
 output appInsightsName string = monitoring.outputs.appInsightsName
 output logAnalyticsWorkspaceId string = monitoring.outputs.workspaceCustomerId
 output tokenUsageWorkbookId string = workbook.outputs.workbookId
+output ollamaEnabled bool = ollamaOn

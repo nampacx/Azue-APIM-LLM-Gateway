@@ -14,7 +14,9 @@
         complexity-threshold     heuristic score for tier-stark; x2 for tier-thanos
         model-tier-pym|stark|thanos, model-classifier
         mai-deployments          comma list of deployments served via /mai/v1 (MAI-Thinking-1)
+        ollama-models            comma list of models served by the local Ollama (ngrok tunnel), "none" = off
   4. Rewrite "model" in the body, call Foundry with the gateway's managed identity
+     (or the local Ollama backend with the tunnel's basic-auth credentials, when the model is an Ollama model)
      (POST /chat/completions and POST /responses; /embeddings has its own operation policy, bifrost-embeddings.xml)
   5. Emit per-user token metrics (the All-Seeing Eye) and expose routing decisions as headers
 
@@ -223,7 +225,8 @@
              + &quot;;llmTier=&quot; + ((int)context.Variables[&quot;llmTier&quot;]).ToString();
     }" />
 
-    <!-- 4. Call Foundry with the gateway identity, deployment chosen via body.model -->
+    <!-- 4. Call the backend: local Ollama (ngrok) for Ollama models, else Foundry with the gateway identity -->
+    <set-variable name="isOllama" value="@(((string)context.Variables[&quot;routedModel&quot;]).Length &gt; 0 &amp;&amp; (&quot;,{{ollama-models}},&quot;).ToLowerInvariant().Contains(&quot;,&quot; + ((string)context.Variables[&quot;routedModel&quot;]).ToLowerInvariant() + &quot;,&quot;))" />
     <set-variable name="isMai" value="@(((string)context.Variables[&quot;routedModel&quot;]).Length &gt; 0 &amp;&amp; (&quot;,{{mai-deployments}},&quot;).ToLowerInvariant().Contains(&quot;,&quot; + ((string)context.Variables[&quot;routedModel&quot;]).ToLowerInvariant() + &quot;,&quot;))" />
     <set-body>@{
         var b = (JObject)context.Variables["body"];
@@ -235,8 +238,23 @@
         }
         return b.ToString();
     }</set-body>
-    <set-backend-service backend-id="@((bool)context.Variables[&quot;isMai&quot;] ? &quot;asgard-foundry-mai&quot; : &quot;asgard-foundry&quot;)" />
-    <authentication-managed-identity resource="https://cognitiveservices.azure.com" />
+    <choose>
+      <when condition="@((bool)context.Variables[&quot;isOllama&quot;])">
+        <!-- ngrok basic-auth in front of Ollama; overrides any client Authorization header (SDKs send the APIM key as Bearer) -->
+        <set-backend-service backend-id="asgard-ollama" />
+        <set-header name="Authorization" exists-action="override">
+          <value>Basic {{ollama-basic-auth}}</value>
+        </set-header>
+        <set-header name="ngrok-skip-browser-warning" exists-action="override">
+          <value>1</value>
+        </set-header>
+        <set-variable name="routeReason" value="@(&quot;local-ollama;&quot; + (string)context.Variables[&quot;routeReason&quot;])" />
+      </when>
+      <otherwise>
+        <set-backend-service backend-id="@((bool)context.Variables[&quot;isMai&quot;] ? &quot;asgard-foundry-mai&quot; : &quot;asgard-foundry&quot;)" />
+        <authentication-managed-identity resource="https://cognitiveservices.azure.com" />
+      </otherwise>
+    </choose>
     <!-- never forward the client's APIM key to the backend -->
     <set-header name="api-key" exists-action="delete" />
     <!-- Foundry agents / Azure OpenAI SDKs append ?api-version=...; the /openai/v1 and /mai/v1 backends don't take one -->
