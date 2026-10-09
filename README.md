@@ -52,9 +52,9 @@ flowchart LR
 | `src/shield-mcp/` | Python Azure Function (MCP extension) with MCU tools |
 | `azure.yaml`, `infra/azd/` | `azd up` entry point (subscription-scope wrapper, preprovision hook `scripts/ollama_tunnel.py`, postdeploy hook `scripts/azd_hook.py`) |
 | `scripts/deploy.py`, `teardown.py` | Python wrappers around `az` (alternative to azd); write `.env` for the notebooks |
-| `infra/workbooks/` | Azure Monitor workbook: token usage per user / model per user |
+| `infra/workbooks/` | Azure Monitor workbook: token usage per user / model per user, local Ollama calls vs Foundry |
 | `docs/` | [APIM definition](docs/apim-definition.md) and [integration deep dive](docs/apim-integration.md) |
-| `notebooks/` | `00`–`08` demos (below), story in [story.md](story.md) |
+| `notebooks/` | `00`–`09` demos (below), story in [story.md](story.md) |
 
 ### 🦸 Naming (MCU theme)
 `rg-heimdal-asgard-swc` · `apim-heimdal-bifrost-*` · `vnet-heimdal-bifrost-*` · `fdry-heimdal-asgard-*` / `proj-heimdal-avengers-v2` · `*-allseeing-*` (monitoring) ·
@@ -122,7 +122,10 @@ Bicep then adds the `asgard-ollama` backend and the `ollama-models` / `ollama-ba
 ask("Who guards the Bifrost?", user="thor", model="llama3.2")   # x-heimdal-route-reason: local-ollama;...
 ```
 
+The full walkthrough is notebook [`09_local_ollama_via_bifrost`](notebooks/09_local_ollama_via_bifrost.ipynb).
+
 - 🔁 **The tunnel URL changes when ngrok restarts** (unless you set a fixed domain). Re-run `azd provision` and the hook picks up the new URL.
+- 🪵 **Is the local model used?** Every call's backend is in `ApiManagementGatewayLogs.BackendId` (`asgard-ollama`). The workbook *Heimdal - LLM token usage* → section **Local Ollama via ngrok** shows local calls, tokens, latency and failures next to Foundry. `KQL_CALLS_BY_BACKEND` in `notebooks/heimdal_helpers.py` gives the same view in Python.
 - 🛑 `python scripts/ollama_tunnel.py --stop` stops the `ollama` / `ngrok` processes the hook started. Logs and the generated policy are in `.azure/<env>/` (`.ollama-tunnel/` without azd).
 - 📶 Your machine must stay on, and the free ngrok plan has a monthly transfer cap. Local inference is slow compared to Foundry.
 - Non-azd: `HEIMDAL_ENABLE_OLLAMA=true python scripts/deploy.py --email ...` runs the same checks.
@@ -144,6 +147,7 @@ The full narrative is in [story.md](story.md).
 | 06 🛡️ | `06_shield_mcp_via_bifrost` | **MCP** server (Azure Function) governed by APIM |
 | 07 🤖 | `07_foundry_agent_via_bifrost` | **Foundry Agent Service** using the gateway as its model |
 | 08 🦸 | `08_agent_framework_via_bifrost` | **Agent Framework** agent: LLM + MCP tools, both via APIM |
+| 09 🦙 | `09_local_ollama_via_bifrost` | *(optional)* **Local Ollama via ngrok**: local vs Foundry, streaming, locked tunnel, a tier routed to the laptop |
 
 ## 🎛️ Router configuration
 

@@ -113,7 +113,7 @@ the router values to `infra/config/heimdal.json`.
 | Logger `heimdal-appinsights` (connection string + managed identity) + diagnostic `applicationinsights` (`metrics: true`) | custom token metrics → App Insights `AppMetrics` |
 | Logger `azuremonitor` + diagnostic `azuremonitor` (`largeLanguageModel.logs: enabled`) | per-request tokens + model → `ApiManagementGatewayLlmLog` |
 | Diagnostic setting `to-log-analytics` | ships `GatewayLogs` and `GatewayLlmLogs` + metrics to Log Analytics |
-| Workbook `Heimdal - LLM token usage` ([`workbook.bicep`](../infra/modules/workbook.bicep)) | tokens per user, model per user |
+| Workbook `Heimdal - LLM token usage` ([`workbook.bicep`](../infra/modules/workbook.bicep)) | tokens per user, model per user; **Local Ollama via ngrok** section: calls per backend (`BackendId`), latency, failures, latest local calls |
 
 No request/response bodies are logged (privacy, and global body capture would break MCP streaming).
 

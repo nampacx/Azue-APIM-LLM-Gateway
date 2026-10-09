@@ -7,7 +7,7 @@ Letting everyone call the models directly means no idea who spends what, no limi
 So we put a guardian on the bridge: **Azure API Management – the Bifrost**. The notebooks walk through its powers, one chapter at a time.
 
 ```
-⚡ 00 setup → 🌈 01 first call → 👁️ 02 usage → 📏 03 length → 🧠 04 complexity → 🔨 05 limits → 🛡️ 06 MCP → 🤖 07 Foundry agent → 🦸 08 agent framework
+⚡ 00 setup → 🌈 01 first call → 👁️ 02 usage → 📏 03 length → 🧠 04 complexity → 🔨 05 limits → 🛡️ 06 MCP → 🤖 07 Foundry agent → 🦸 08 agent framework → 🦙 09 local lane
 ```
 
 What is configured in APIM is described in [docs/apim-definition.md](docs/apim-definition.md); how it works in
@@ -54,6 +54,12 @@ Every agent LLM call now flows through HEIMDAL and is attributed to `black-widow
 ### 🦸 08 · `08_agent_framework_via_bifrost` – The finale
 A **Microsoft Agent Framework** agent (“Friday”) whose model calls *and* MCP tools both go through APIM – one key, one audit trail.
 The `x-agent` header tags the traffic so the agent appears as its own `Agent` dimension in the token metrics. *(Framework evolves quickly.)*
+
+### 🦙 09 · `09_local_ollama_via_bifrost` – Heimdall's local lane *(optional)*
+A model on the **demo laptop** joins the realm. Ollama serves it, and an ngrok tunnel protected by basic auth connects it to APIM (backend `asgard-ollama`).
+Clients only change the `model` name. The notebook compares local and Foundry answers side by side, streams through the tunnel, and shows that
+the tunnel refuses direct calls. It also sends the whole `pym` tier to the laptop for a moment and finds the local calls in the token metrics and in the gateway log (`BackendId = asgard-ollama`). The same view is in the workbook section *Local Ollama via ngrok*.
+*(Needs `HEIMDAL_ENABLE_OLLAMA=true` at deploy time and the laptop online. See README → Local Ollama via ngrok.)*
 
 ## 🧰 Helper
 [`notebooks/heimdal_helpers.py`](notebooks/heimdal_helpers.py) holds the shared code: `client()`, `ask()` (returns the routing headers),

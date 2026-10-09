@@ -125,6 +125,11 @@ metrics work unchanged, because Ollama returns OpenAI-style `usage`. `/embedding
 for `nomic-embed-text`. Because the check runs on the *routed* model, a tier named value
 (`model-tier-pym` = `llama3.2`) can also send a whole tier to the local model.
 
+To see whether the local model really served a call, check the gateway log: `ApiManagementGatewayLogs.BackendId` is
+`asgard-ollama`, and `BackendTime` / `BackendResponseCode` show latency and tunnel failures (0 / 502 / 504 when the
+laptop or ngrok is offline). The workbook section *Local Ollama via ngrok* and `KQL_CALLS_BY_BACKEND` join this with
+`ApiManagementGatewayLlmLog` to get tokens and the model name.
+
 ### Response headers (what the client sees)
 
 | Header | Content |
