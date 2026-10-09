@@ -115,6 +115,20 @@ Tier → deployment comes from the `model-tier-pym|stark|thanos` named values.
 
 MAI deployments (`{{mai-deployments}}`, comma list) live on a different endpoint (`/mai/v1`) and accept only `max_completion_tokens`. When the routed deployment is in that list, the policy selects the `asgard-foundry-mai` backend and renames `max_tokens` → `max_completion_tokens`. If MAI is disabled the named value is `none` (named values cannot be empty).
 
+### 🦙 Local Ollama models (optional)
+
+Only with `HEIMDAL_ENABLE_OLLAMA=true`. A model on the demo machine, reached through an **ngrok tunnel**. Requirements, setup and troubleshooting: [local-ollama.md](local-ollama.md).
+
+- 🚇 **Setup:** the azd `preprovision` hook ([`ollama_tunnel.py`](../scripts/ollama_tunnel.py)) checks that Ollama serves the model(s) and opens the tunnel. The tunnel uses an ngrok traffic policy: `basic-auth` (a generated secret, stored in the azd env as `HEIMDAL_OLLAMA_AUTH`) and a Host rewrite to `localhost`.
+- 🧱 **Bicep:** creates the backend `asgard-ollama` (`<ngrok url>/v1`, Ollama's OpenAI-compatible surface), fills `{{ollama-models}}`, and stores the credentials base64-encoded in the secret named value `{{ollama-basic-auth}}`.
+- 🧭 **Routing:** when the *routed* model is in `{{ollama-models}}`, the policy selects `asgard-ollama`. It skips the managed identity and sends `Authorization: Basic {{ollama-basic-auth}}` (overriding the client's header) plus `ngrok-skip-browser-warning`. `x-heimdal-route-reason` gets the prefix `local-ollama;`.
+- 🔢 **Token parameter:** Ollama only honours `max_tokens`, and Foundry GPT models only accept `max_completion_tokens`. Clients send `max_completion_tokens`, and the policy renames it to `max_tokens` for Ollama.
+- 📈 **Limits and metrics:** work unchanged, because Ollama returns OpenAI-style `usage`. `/embeddings` uses the same check (e.g. `nomic-embed-text`).
+- 🐜 **Whole tier local:** the check runs on the routed model, so setting a tier named value (`model-tier-pym` = `gemma4-e4b`) sends that tier to the laptop.
+- 🪵 **Did the laptop answer?** `ApiManagementGatewayLogs.BackendId` is `asgard-ollama`. See the workbook section *Local Ollama via ngrok* ([workbook.md](workbook.md)) or `KQL_CALLS_BY_BACKEND` in `heimdal_helpers.py`.
+
+> 💡 The default local model `gemma4:e4b` answers directly. Other small models are often reasoning models (`qwen3.5`, `deepseek-r1`). If the token budget runs out while they think, `content` is empty. Send `reasoning_effort="none"` to switch thinking off, as notebook 09 does.
+
 ### 🏷️ Response headers (what the client sees)
 
 | Header | Content |
@@ -122,7 +136,7 @@ MAI deployments (`{{mai-deployments}}`, comma list) live on a different endpoint
 | `x-heimdal-user` | subscription name |
 | `x-heimdal-tier` | `pym` / `stark` / `thanos` / `explicit` |
 | `x-heimdal-model` | deployment that served the call |
-| `x-heimdal-route-reason` | e.g. `mode=hybrid;complexity=heuristic;tokens~120;score=3;llmTier=-1` |
+| `x-heimdal-route-reason` | e.g. `mode=hybrid;complexity=heuristic;tokens~120;score=3;llmTier=-1`; prefixed `local-ollama;` for Ollama |
 | `x-heimdal-remaining-tokens` | what is left of the per-minute budget |
 
 `ask()` in `heimdal_helpers.py` reads exactly these.
@@ -139,6 +153,7 @@ MAI deployments (`{{mai-deployments}}`, comma list) live on a different endpoint
 - 🎟️ The policy requests a token for `https://cognitiveservices.azure.com` with `authentication-managed-identity`.
 - ⏱️ `apim-apis` has `dependsOn: [rbac]` so the roles exist before the first call.
 - 🤖 The classifier call (`send-request`) authenticates the same way.
+- 🦙 Exception: the optional local Ollama backend has no Entra identity. The policy sends the ngrok basic-auth credentials from the secret named value `ollama-basic-auth` instead.
 
 ---
 
@@ -219,5 +234,6 @@ This runs `az apim nv update …`; the policy sees the new value within about a 
 |---|---|
 | 🧠 add or change a tier model | change `tierModels` (and `models`) in `infra/config/heimdal.json`, or set the `model-tier-*` named value live |
 | 👤 add a user | add to `demoUsers` in `infra/config/heimdal.json`; a subscription is created and the deploy script / azd hook writes its key to `.env` as `HEIMDAL_KEY_<NAME>` |
+| 🦙 serve a local model | `azd env set HEIMDAL_ENABLE_OLLAMA true` and `HEIMDAL_OLLAMA_MODEL <name>`, then `azd provision` (README → *Local Ollama via ngrok*) |
 | 🧮 add a scoring rule | edit `complexityScore` in `bifrost-router.xml` and redeploy `apim-apis` |
 | 🏭 harden for production | Entra/JWT validation instead of subscription keys, private endpoints (inbound to APIM, Foundry, Function), Key Vault-backed named values, `token-quota` budgets, content safety policies |

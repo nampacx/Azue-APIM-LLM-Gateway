@@ -317,6 +317,120 @@
         "visualization": "table"
       },
       "name": "agent"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "### Local Ollama via ngrok\nCalls the router forwarded to the backend `asgard-ollama` (a model on the demo machine, reached through an ngrok tunnel). Source: `ApiManagementGatewayLogs` (`BackendId`, `BackendTime`, status codes) joined with `ApiManagementGatewayLlmLog` (tokens, model) via `CorrelationId`. Empty unless the gateway was deployed with `HEIMDAL_ENABLE_OLLAMA=true`. `BackendResponseCode` 0 / 502 / 504 usually means the laptop or the tunnel is offline."
+      },
+      "name": "ollama-h"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "name": "ollama-tiles",
+        "query": "ApiManagementGatewayLogs\n| where TimeGenerated {TimeRange:query}\n| where ApiId has \"bifrost-llm\"\n| extend Backend = case(BackendId == \"asgard-ollama\" or BackendUrl has \".ngrok\", \"local ollama (ngrok)\",\n                        BackendId == \"asgard-foundry-mai\", \"foundry mai\",\n                        BackendId == \"asgard-foundry\", \"foundry\",\n                        isempty(BackendId) and isempty(BackendUrl), \"not forwarded (gateway)\",\n                        \"other\")\n| where Backend == \"local ollama (ngrok)\"\n| join kind=leftouter (ApiManagementGatewayLlmLog\n    | where TimeGenerated {TimeRange:query}\n    | summarize Tokens = sum(TotalTokens), Model = take_any(ModelName) by CorrelationId) on CorrelationId\n| summarize [\"Local calls\"]=count(), Failed=countif(ResponseCode >= 400), Users=dcount(ApimSubscriptionId), Tokens=tolong(sum(Tokens)), [\"Avg backend ms\"]=tolong(avg(BackendTime)), [\"P95 backend ms\"]=tolong(percentile(BackendTime, 95))",
+        "size": 1,
+        "title": "Local Ollama totals",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "__WORKSPACE_ID__"
+        ],
+        "visualization": "table"
+      },
+      "name": "ollama-tiles"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "name": "ollama-backend-over-time",
+        "query": "ApiManagementGatewayLogs\n| where TimeGenerated {TimeRange:query}\n| where ApiId has \"bifrost-llm\"\n| extend Backend = case(BackendId == \"asgard-ollama\" or BackendUrl has \".ngrok\", \"local ollama (ngrok)\",\n                        BackendId == \"asgard-foundry-mai\", \"foundry mai\",\n                        BackendId == \"asgard-foundry\", \"foundry\",\n                        isempty(BackendId) and isempty(BackendUrl), \"not forwarded (gateway)\",\n                        \"other\")\n| summarize Calls=count() by bin(TimeGenerated, {TimeRange:grain}), Backend",
+        "size": 0,
+        "title": "Calls per backend over time (local vs Foundry)",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "__WORKSPACE_ID__"
+        ],
+        "visualization": "timechart"
+      },
+      "name": "ollama-backend-over-time",
+      "customWidth": "50"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "name": "ollama-backend-compare",
+        "query": "ApiManagementGatewayLogs\n| where TimeGenerated {TimeRange:query}\n| where ApiId has \"bifrost-llm\"\n| extend Backend = case(BackendId == \"asgard-ollama\" or BackendUrl has \".ngrok\", \"local ollama (ngrok)\",\n                        BackendId == \"asgard-foundry-mai\", \"foundry mai\",\n                        BackendId == \"asgard-foundry\", \"foundry\",\n                        isempty(BackendId) and isempty(BackendUrl), \"not forwarded (gateway)\",\n                        \"other\")\n| summarize Calls=count(), [\"Failed %\"]=round(100.0 * countif(ResponseCode >= 400) / count(), 1), [\"Avg backend ms\"]=tolong(avg(BackendTime)), [\"P95 backend ms\"]=tolong(percentile(BackendTime, 95)) by Backend\n| order by Calls desc",
+        "size": 0,
+        "title": "Backend comparison: calls, failures, latency",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "__WORKSPACE_ID__"
+        ],
+        "visualization": "table"
+      },
+      "name": "ollama-backend-compare",
+      "customWidth": "50"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "name": "ollama-user-model",
+        "query": "ApiManagementGatewayLogs\n| where TimeGenerated {TimeRange:query}\n| where ApiId has \"bifrost-llm\"\n| extend Backend = case(BackendId == \"asgard-ollama\" or BackendUrl has \".ngrok\", \"local ollama (ngrok)\",\n                        BackendId == \"asgard-foundry-mai\", \"foundry mai\",\n                        BackendId == \"asgard-foundry\", \"foundry\",\n                        isempty(BackendId) and isempty(BackendUrl), \"not forwarded (gateway)\",\n                        \"other\")\n| where Backend == \"local ollama (ngrok)\"\n| join kind=leftouter (ApiManagementGatewayLlmLog\n    | where TimeGenerated {TimeRange:query}\n    | summarize Tokens = sum(TotalTokens), Model = take_any(ModelName) by CorrelationId) on CorrelationId\n| summarize Calls=count(), Failed=countif(ResponseCode >= 400), Tokens=tolong(sum(Tokens)), [\"Avg backend ms\"]=tolong(avg(BackendTime)), [\"Last call\"]=max(TimeGenerated) by User=ApimSubscriptionId, Model\n| order by Calls desc",
+        "size": 0,
+        "title": "Local Ollama calls per user and model",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "__WORKSPACE_ID__"
+        ],
+        "visualization": "table"
+      },
+      "name": "ollama-user-model"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "name": "ollama-recent",
+        "query": "ApiManagementGatewayLogs\n| where TimeGenerated {TimeRange:query}\n| where ApiId has \"bifrost-llm\"\n| extend Backend = case(BackendId == \"asgard-ollama\" or BackendUrl has \".ngrok\", \"local ollama (ngrok)\",\n                        BackendId == \"asgard-foundry-mai\", \"foundry mai\",\n                        BackendId == \"asgard-foundry\", \"foundry\",\n                        isempty(BackendId) and isempty(BackendUrl), \"not forwarded (gateway)\",\n                        \"other\")\n| where Backend == \"local ollama (ngrok)\"\n| join kind=leftouter (ApiManagementGatewayLlmLog\n    | where TimeGenerated {TimeRange:query}\n    | summarize Tokens = sum(TotalTokens), Model = take_any(ModelName) by CorrelationId) on CorrelationId\n| project TimeGenerated, User=ApimSubscriptionId, Model, Operation=OperationId, ResponseCode, BackendResponseCode, BackendTime, Tokens, LastErrorReason, LastErrorMessage\n| order by TimeGenerated desc\n| take 50",
+        "size": 0,
+        "title": "Latest local Ollama calls (troubleshooting)",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "crossComponentResources": [
+          "__WORKSPACE_ID__"
+        ],
+        "visualization": "table"
+      },
+      "name": "ollama-recent"
     }
   ],
   "fallbackResourceIds": [

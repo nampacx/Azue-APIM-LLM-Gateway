@@ -5,6 +5,7 @@
   The llm-* policies don't support the embeddings schema, so this operation uses classic policies:
      rate-limit-by-key        per-user call budget
      model                    "heimdal-auto" | "auto" | missing  ->  {{model-embedding}}, else the deployment as sent
+                              (models listed in {{ollama-models}} go to the local Ollama backend via ngrok)
      emit-metric              "Embedding Tokens" per User / Model (namespace heimdal, like the chat token metrics)
 -->
 <policies>
@@ -37,8 +38,21 @@
         return b.ToString();
     }</set-body>
 
-    <set-backend-service backend-id="asgard-foundry" />
-    <authentication-managed-identity resource="https://cognitiveservices.azure.com" />
+    <choose>
+      <when condition="@((&quot;,{{ollama-models}},&quot;).ToLowerInvariant().Contains(&quot;,&quot; + ((string)context.Variables[&quot;routedModel&quot;]).ToLowerInvariant() + &quot;,&quot;))">
+        <set-backend-service backend-id="asgard-ollama" />
+        <set-header name="Authorization" exists-action="override">
+          <value>Basic {{ollama-basic-auth}}</value>
+        </set-header>
+        <set-header name="ngrok-skip-browser-warning" exists-action="override">
+          <value>1</value>
+        </set-header>
+      </when>
+      <otherwise>
+        <set-backend-service backend-id="asgard-foundry" />
+        <authentication-managed-identity resource="https://cognitiveservices.azure.com" />
+      </otherwise>
+    </choose>
     <set-header name="api-key" exists-action="delete" />
     <set-query-parameter name="api-version" exists-action="delete" />
   </inbound>

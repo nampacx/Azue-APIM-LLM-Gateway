@@ -487,3 +487,20 @@ ApiManagementGatewayLlmLog
     by User, ModelName
 | order by Total desc
 """
+
+# Which backend served each Bifrost call? The gateway log records the backend entity (BackendId), so calls the
+# router sent to the local Ollama (backend asgard-ollama, ngrok tunnel) can be told apart from Foundry calls.
+# Tokens and model come from the LLM gateway log (left join: failed calls have no LLM log row).
+KQL_CALLS_BY_BACKEND = """
+ApiManagementGatewayLogs
+| where ApiId has "bifrost-llm"
+| extend Backend = case(BackendId == "asgard-ollama" or BackendUrl has ".ngrok", "local ollama (ngrok)",
+                        BackendId == "asgard-foundry-mai", "foundry mai",
+                        BackendId == "asgard-foundry", "foundry",
+                        "not forwarded (gateway)")
+| join kind=leftouter (ApiManagementGatewayLlmLog
+    | summarize Tokens = sum(TotalTokens), Model = take_any(ModelName) by CorrelationId) on CorrelationId
+| summarize Calls = count(), Failed = countif(ResponseCode >= 400), Tokens = tolong(sum(Tokens)),
+    AvgBackendMs = tolong(avg(BackendTime)) by Backend, User = ApimSubscriptionId, Model
+| order by Backend asc, Calls desc
+"""

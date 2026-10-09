@@ -4,6 +4,8 @@ Usage:
     python scripts/deploy.py --check-models            # list Foundry models available in swedencentral
     python scripts/deploy.py --email you@contoso.com   # deploy infra + MCP function + write .env
     python scripts/deploy.py --skip-infra              # re-publish function + refresh .env only
+
+    HEIMDAL_ENABLE_OLLAMA=true python scripts/deploy.py ...   # also wire a local Ollama via ngrok (scripts/ollama_tunnel.py)
 """
 from __future__ import annotations
 
@@ -17,6 +19,8 @@ import tempfile
 import time
 import zipfile
 from pathlib import Path
+
+import ollama_tunnel
 
 ROOT = Path(__file__).resolve().parent.parent
 AZ = shutil.which("az") or "az"
@@ -87,6 +91,8 @@ def signed_in_principal() -> tuple[str, str]:
 
 
 def deploy_infra(args) -> dict:
+    # Local Ollama via ngrok (no-op unless HEIMDAL_ENABLE_OLLAMA=true): URL, models and tunnel credentials for main.bicepparam.
+    os.environ.update(ollama_tunnel.ensure())
     az("group", "create", "-n", args.resource_group, "-l", args.location, "--tags", "project=heimdal")
     env = os.environ.copy()
     env["HEIMDAL_PUBLISHER_EMAIL"] = args.email
@@ -159,6 +165,8 @@ def write_env(args, out: dict) -> None:
         f"HEIMDAL_APPINSIGHTS={out['appInsightsName']}",
         f"HEIMDAL_LOG_WORKSPACE_ID={out['logAnalyticsWorkspaceId']}",
     ]
+    if str(out.get("ollamaEnabled", "")).lower() == "true":
+        lines.append(f"HEIMDAL_OLLAMA_MODELS={os.environ.get('HEIMDAL_OLLAMA_MODELS', '')}")
     for user in (u["name"] for u in CONFIG["demoUsers"]):
         res = az_json("rest", "--method", "post", "--url",
                       f"{base}/subscriptions/{user}/listSecrets?api-version={APIM_API}")
@@ -177,6 +185,7 @@ def azd_hook() -> None:
         "functionAppName": e["HEIMDAL_FUNCTION_APP"], "appInsightsName": e["HEIMDAL_APPINSIGHTS"],
         "logAnalyticsWorkspaceId": e["HEIMDAL_LOG_WORKSPACE_ID"],
         "foundryConnectionName": e.get("HEIMDAL_FOUNDRY_CONNECTION", "bifrost-apim"),
+        "ollamaEnabled": e.get("HEIMDAL_OLLAMA_ENABLED", "false"),
     }
     key = wire_mcp_key(args.resource_group, out["functionAppName"], out["apimName"])
     # Remember the key in the azd environment: main.parameters.json passes it to Bicep on the next

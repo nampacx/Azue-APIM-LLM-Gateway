@@ -103,8 +103,9 @@ Clients authenticate to the gateway. The gateway uses its own identity to call t
 
 - 🧠 **Foundry (LLM, embeddings):** the policy deletes `api-key` and authenticates with APIM's managed identity (`authentication-managed-identity`, `https://cognitiveservices.azure.com`).
 - 🛡️ **MCP Function:** the policy deletes `api-key` and `Ocp-Apim-Subscription-Key` and injects the function key from the `{{shield-mcp-key}}` named value.
+- 🦙 **Local Ollama (optional):** the policy deletes `api-key` and overrides `Authorization` with the ngrok basic-auth credentials from the `{{ollama-basic-auth}}` named value. The SDK sends the APIM key as `Authorization: Bearer`, so the override also keeps it away from the laptop.
 
-> 👁️ Foundry and the Function therefore never see who the user is. Per-user attribution exists only in APIM: metrics, response headers and gateway logs.
+> 👁️ Foundry, the Function and the local Ollama therefore never see who the user is. Per-user attribution exists only in APIM: metrics, response headers and gateway logs.
 
 ---
 

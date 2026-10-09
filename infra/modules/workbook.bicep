@@ -1,5 +1,5 @@
-// Azure Monitor workbook: token usage per user and model used by user.
-// Reads AppMetrics (llm-emit-token-metric) and ApiManagementGatewayLlmLog from the Log Analytics workspace.
+// Azure Monitor workbook: token usage per user and model used by user, plus local Ollama (ngrok) calls vs Foundry.
+// Reads AppMetrics (llm-emit-token-metric), ApiManagementGatewayLlmLog and ApiManagementGatewayLogs (BackendId) from the Log Analytics workspace.
 param location string
 param workspaceId string
 param tags object

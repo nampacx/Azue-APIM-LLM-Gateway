@@ -1,6 +1,6 @@
 # 📊 What the Azure workbook shows
 
-> 💡 **TL;DR:** The workbook **`Heimdal - LLM token usage`** answers one question: **who used how many LLM tokens, on which model, through which route and agent?** It has one time-range picker and 10 panels, all fed by the gateway's own telemetry in Log Analytics. Nothing is stored in the workbook itself.
+> 💡 **TL;DR:** The workbook **`Heimdal - LLM token usage`** answers one question: **who used how many LLM tokens, on which model, through which route and agent?** It has one time-range picker and 10 panels, plus 5 optional panels for the local Ollama backend, all fed by the gateway's own telemetry in Log Analytics. Nothing is stored in the workbook itself.
 
 | 🎯 You want to know | 📍 Look at | 🧱 Section |
 |---|---|---|
@@ -10,6 +10,7 @@
 | Which routing tier answered | Tokens per user and routing tier | [5](#5--models-used-by-user) |
 | Exact per-request numbers | Requests and tokens per user and model | [6](#6--exact-per-request-usage) |
 | Which agent caused the traffic | Tokens per agent, user and model | [7](#7--per-agent) |
+| 🦙 Did the laptop model answer, and how fast | Local Ollama via ngrok | [8](#8--local-ollama-via-ngrok-optional) |
 
 ---
 
@@ -30,6 +31,7 @@ flowchart LR
 |---|---|---|---|---|
 | 📈 | Custom metric `llm-emit-token-metric` | `AppMetrics` | Totals, per user, per model, per tier, per agent | Aggregated, has `User`, `Model`, `Tier`, `Agent` |
 | 🔍 | APIM LLM gateway log | `ApiManagementGatewayLlmLog` + `ApiManagementGatewayLogs` | "Exact per-request usage" panel | One row per request |
+| 🪵 | APIM gateway log (`BackendId`, `BackendTime`, status codes) | `ApiManagementGatewayLogs` (+ LLM log for tokens) | "Local Ollama via ngrok" panels | One row per request |
 
 ---
 
@@ -141,14 +143,36 @@ The `Agent` value is the `x-agent` request header. It is a **tag only, never an 
 
 ---
 
+## 8. 🦙 Local Ollama via ngrok (optional)
+
+Only filled when the gateway was deployed with `HEIMDAL_ENABLE_OLLAMA=true` (README → *Local Ollama via ngrok*). Otherwise the panels stay empty.
+
+| 📊 Panel | Chart | What you see |
+|---|---|---|
+| **Local Ollama totals** | Table | Local calls, failed calls, users, tokens, average and p95 backend time |
+| **Calls per backend over time** | Time chart | `local ollama (ngrok)` vs `foundry` vs `foundry mai` vs `not forwarded (gateway)` |
+| **Backend comparison** | Table | Calls, `Failed %`, average and p95 backend time per backend |
+| **Local Ollama calls per user and model** | Table | `User`, `Model`, `Calls`, `Failed`, `Tokens`, last call |
+| **Latest local Ollama calls** | Table | Last 50 calls with `ResponseCode`, `BackendResponseCode`, `BackendTime`, `LastErrorReason` |
+
+How a call is labelled: the gateway log records the backend entity APIM forwarded to. `BackendId` = `asgard-ollama` means the laptop answered. `asgard-foundry` / `asgard-foundry-mai` mean Foundry. No backend at all means the gateway answered itself, for example with a `429` from the token limit. Tokens and the model name come from a left join with `ApiManagementGatewayLlmLog` on `CorrelationId`.
+
+> ⚠️ `BackendResponseCode` `0`, `502` or `504` on local calls usually means the laptop or the ngrok tunnel is offline. Restart it with `azd provision` (the hook starts Ollama and ngrok again).
+
+> 🧪 **Not yet verified:** whether APIM writes `ApiManagementGatewayLlmLog` rows for the Ollama backend. Without them, local calls still appear, but with empty `Tokens` / `Model`. The token metrics in sections 3–5 still count them.
+
+The same split in Python: `KQL_CALLS_BY_BACKEND` in [heimdal_helpers.py](../notebooks/heimdal_helpers.py), used by notebook `09_local_ollama_via_bifrost`.
+
+---
+
 ## 🚫 What the workbook does not show
 
 | ❌ Not shown | Why |
 |---|---|
 | Embedding tokens | The `Embedding Tokens` metric ([bifrost-embeddings.xml](../policies/bifrost-embeddings.xml)) is emitted, but no panel queries it. Only the `Total Tokens` and the prompt/completion metrics are used |
 | Cost in money | Only tokens are counted. There is no price table |
-| Rate-limit hits (`429`) | Not queried. Check the gateway logs |
-| Latency, errors, backend health | Out of scope. This is a token-usage workbook |
+| Rate-limit hits (`429`) | Not queried as such. They only show up as `not forwarded (gateway)` in the backend chart of section 8 |
+| Latency, errors, backend health | Out of scope for Foundry. Only the optional local Ollama backend has latency and failure panels (section 8) |
 | MCP calls | The MCP API ([shield-mcp.xml](../policies/shield-mcp.xml)) emits no token metrics |
 
 > 🧪 **Demo-grade:** the workbook has no alerts and no budgets. It is for looking at usage, not for enforcing it. Enforcement is done by the policy (`llm-token-limit`).
