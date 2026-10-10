@@ -11,7 +11,8 @@ So we put a guardian on the bridge: **Azure API Management – the Bifrost**. Th
 ```
 
 What is configured in APIM is described in [docs/apim-definition.md](docs/apim-definition.md); how it works in
-[docs/apim-integration.md](docs/apim-integration.md).
+[docs/apim-integration.md](docs/apim-integration.md); the policies and the routing rules, with their XML, in
+[docs/policies.md](docs/policies.md) and [docs/routing.md](docs/routing.md).
 
 ## 🎬 Chapters
 
@@ -31,11 +32,11 @@ It waits and retries because ingestion takes a few minutes. The same data is in 
 
 ### 📏 03 · `03_router_prompt_length` – Router by prompt length
 `router-mode = length`: short prompts go to the small model (**pym**), medium to **stark**, huge to **thanos**.
-Also shows how a client can override the router with `model="tier-thanos"` or a concrete deployment.
+Also shows how a client can override the router with `model="tier-thanos"` or a concrete deployment. The rules in detail: [docs/routing.md](docs/routing.md).
 
 ### 🧠 04 · `04_router_complexity` – Router by prompt complexity
 Two ways to judge difficulty: a free **heuristic** score in the policy (code, reasoning words, math, multi-questions) or a small
-**LLM classifier** (`simple|medium|complex`, heuristic as fallback). The notebook switches modes live via named values, compares
+**LLM classifier** (`simple|medium|complex`, heuristic as fallback; it costs one extra model call, see [docs/routing.md](docs/routing.md#-does-the-classifier-cost-extra)). The notebook switches modes live via named values, compares
 decisions, verifies them against the gateway log and ends on the default **hybrid** mode (higher of length and complexity wins).
 
 ### 🔨 05 · `05_mjolnir_token_limits` – Per-user token quotas
