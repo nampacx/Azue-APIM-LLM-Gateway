@@ -1,24 +1,20 @@
-# 📜 What the APIM policies do (and how routing decides)
+# 📜 What the APIM policies do
 
-> 💡 **TL;DR:** Three XML policies run the gateway. [bifrost-router.xml](../policies/bifrost-router.xml) is the brain for chat and responses: it identifies the caller, limits tokens, **picks a model tier** (`pym` / `stark` / `thanos`) from the prompt, calls the backend and records everything. The tier comes from **length** (prompt size), **complexity** (a keyword score, or a small LLM as judge), or **hybrid** (the higher of both). Each section below has a ⚡ short answer and a 🔬 detailed one.
+> 💡 **TL;DR:** Three XML policies run the gateway. [bifrost-router.xml](../policies/bifrost-router.xml) handles chat and responses: identify the caller, limit tokens, **pick a model tier**, call the backend, record everything. This page covers everything except the routing decision, which has its own page: [routing.md](routing.md). Every section shows the real policy XML, a ⚡ short answer and a 🔬 detailed one.
 
-| 🧩 Policy | 🎯 Applies to | 🧠 What it does |
-|---|---|---|
-| [bifrost-router.xml](../policies/bifrost-router.xml) | `POST /chat/completions`, `POST /responses` | user, token limit, **router**, backend, metrics, headers |
-| [bifrost-embeddings.xml](../policies/bifrost-embeddings.xml) | `POST /embeddings` | rate limit, embedding model, `Embedding Tokens` metric. **No router** |
-| [shield-mcp.xml](../policies/shield-mcp.xml) | `/mcp` of the `shield-mcp` API | rate limit, function key injection |
-
-| 🥉🥈🥇 Tier | 🧠 Default model ([heimdal.json](../infra/config/heimdal.json)) | 📏 Length rule (500 tokens) | 🧮 Score rule (threshold 3) |
+| 🧩 Policy | 🎯 Applies to | 🧠 What it does | 📖 Docs |
 |---|---|---|---|
-| 🐜 `pym` | `gpt-6-luna` | below 500 | below 3 |
-| 🦾 `stark` | `gpt-5-6-terra` | 500 up to 1,999 | 3 up to 5 |
-| 🌌 `thanos` | `gpt-6-1-sol` (or `mai-thinking-1` if MAI is enabled) | 2,000 and up | 6 and up |
+| [bifrost-router.xml](../policies/bifrost-router.xml) | `POST /chat/completions`, `POST /responses` | user, token limit, **router**, backend, metrics, headers | this page + [routing.md](routing.md) |
+| [bifrost-embeddings.xml](../policies/bifrost-embeddings.xml) | `POST /embeddings` | rate limit, embedding model, `Embedding Tokens` metric. **No router** | [embeddings-mcp-policies.md](embeddings-mcp-policies.md) |
+| [shield-mcp.xml](../policies/shield-mcp.xml) | `/mcp` of the `shield-mcp` API | rate limit, function key injection | [embeddings-mcp-policies.md](embeddings-mcp-policies.md) |
+
+> ℹ️ The XML below is copied from the policy files. If the two ever differ, the policy file wins.
 
 ---
 
 ## 🗺️ The big picture
 
-The order of steps in `bifrost-router.xml`. Sections 1–9 follow it.
+The order of steps in `bifrost-router.xml`. Sections 1–4 follow it.
 
 ```mermaid
 flowchart TD
@@ -27,13 +23,9 @@ flowchart TD
   B -- no --> C[👤 1. user = subscription name]
   C --> D[🔨 2. token limit per user]
   D -- over limit --> Y[🚫 429]
-  D --> E[📖 3. read body, build prompt text]
-  E --> F[📏 4. length signal]
-  E --> G[🧮 5. heuristic score]
-  E --> H[🤖 6. LLM classifier, only if configured]
-  F & G & H --> I{🎯 7. decide tier}
-  I --> J[🔀 8. pick backend + rewrite model]
-  J --> K[📈 9. metrics + x-heimdal-* headers]
+  D --> E[🔀 3. router: tier + model, see routing.md]
+  E --> F[🎯 4. backend + rewrite model]
+  F --> G[📈 5. metrics + x-heimdal-* headers]
 ```
 
 ---
@@ -42,10 +34,28 @@ flowchart TD
 
 > ⚡ **Short:** The user is the APIM subscription behind the `api-key` header. Its name (`thor`, `tony-stark`) tags every metric and response.
 
+```xml
+<!-- keys in URLs end up in logs and browser history: header only -->
+<choose>
+  <when condition="@(context.Request.Url.Query.ContainsKey(&quot;subscription-key&quot;))">
+    <return-response>
+      <set-status code="400" reason="Bad Request" />
+      <set-header name="Content-Type" exists-action="override">
+        <value>application/json</value>
+      </set-header>
+      <set-body>{"error":{"code":"key_in_url","message":"Send the subscription key in the api-key header, not in the URL."}}</set-body>
+    </return-response>
+  </when>
+</choose>
+
+<!-- 1. Who is calling? -->
+<set-variable name="user" value="@(context.Subscription?.Name ?? &quot;anonymous&quot;)" />
+```
+
 **🔬 In detail:**
-- The policy first rejects `?subscription-key=` in the URL with `400 key_in_url`. Keys in URLs end up in logs.
-- It then stores `context.Subscription.Name` as the `user` variable (`anonymous` is only a safety net).
-- The product decides the tier of the *limit* (section 2), not the model tier. Do not mix them up.
+- A key in the URL gets `400 key_in_url`. A missing or unknown key never reaches the policy: APIM answers `401` first.
+- `context.Subscription.Name` becomes the `user` variable. `anonymous` is only a safety net.
+- The *product* of the subscription decides the token budget (section 2), not the model tier.
 - Full story, including why subscriptions and not OAuth: [user.md](user.md).
 
 ---
@@ -54,6 +64,25 @@ flowchart TD
 
 > ⚡ **Short:** Each user gets a tokens-per-minute budget. Go over it and you get `429`, while other users keep working.
 
+```xml
+<choose>
+  <when condition="@(context.Product?.Id == &quot;infinity-gauntlet&quot;)">
+    <llm-token-limit
+        counter-key="@(context.Subscription?.Id ?? context.Request.IpAddress)"
+        tokens-per-minute="{{tpm-premium}}"
+        estimate-prompt-tokens="true"
+        remaining-tokens-header-name="x-heimdal-remaining-tokens" />
+  </when>
+  <otherwise>
+    <llm-token-limit
+        counter-key="@(context.Subscription?.Id ?? context.Request.IpAddress)"
+        tokens-per-minute="{{tpm-standard}}"
+        estimate-prompt-tokens="true"
+        remaining-tokens-header-name="x-heimdal-remaining-tokens" />
+  </otherwise>
+</choose>
+```
+
 **🔬 In detail:**
 
 | Product | Named value | Default |
@@ -61,204 +90,136 @@ flowchart TD
 | `avengers-initiative` (standard) | `tpm-standard` | 5,000 TPM |
 | `infinity-gauntlet` (premium) | `tpm-premium` | 100,000 TPM |
 
-- Policy: `llm-token-limit` with `counter-key` = `context.Subscription.Id` and `estimate-prompt-tokens="true"`. APIM counts the prompt *before* the call, so a huge prompt is stopped without paying for it.
-- The limit runs **before routing**. It counts tokens per user, whatever tier or model the router picks later.
+- `counter-key` is the subscription id, so each user has their own counter.
+- `estimate-prompt-tokens="true"`: APIM counts the prompt *before* the call, so a huge prompt is stopped without paying for it.
+- The limit runs **before routing**. It counts tokens per user, whatever tier or model is picked later.
 - `x-heimdal-remaining-tokens` shows what is left in the minute.
-- There are two `llm-token-limit` blocks in a `choose`. The named value is substituted when the policy loads, so each block needs its own static value.
+- Two blocks in a `choose`, because the named value is substituted as text when the policy loads, so each block needs its own static value.
 - Notebook: `05_mjolnir_token_limits`.
 
 ---
 
-## 3. 📖 Reading the request
+## 3. 🔀 Model routing
 
-> ⚡ **Short:** The policy reads the body once and glues all prompt text into one string. Every routing signal works on that string.
+> ⚡ **Short:** The router turns the prompt into a tier (`pym` / `stark` / `thanos`) by **length**, **complexity** (heuristic or LLM judge) or **hybrid**, and then into a model.
 
-**🔬 In detail:**
-- `requestedModel` is `body.model`, or empty. `isAuto` is true when it is empty, `heimdal-auto` or `auto`. SDKs force a `model`, so `heimdal-auto` is the "decide for me" value.
-- `promptText` collects text from both API shapes: `messages[].content` (chat) and `instructions` + `input` (Responses). Content parts of type text are included.
-- `messageCount` is the number of messages or input items.
-- ⚠️ The **whole conversation** counts: system prompt, history and the new question. A long chat drifts towards a higher tier even if the last question is simple. Images, tool definitions and tool results are not in `promptText`.
+**🔬 In detail:** the routing has its own page with the XML for each signal: [routing.md](routing.md).
+
+| 📏 Mode | 🧠 Signal | 📖 Section |
+|---|---|---|
+| `length` | estimated tokens (characters / 4) | [routing.md section 2](routing.md#2--routing-by-length) |
+| `complexity` + `heuristic` | keyword score | [routing.md section 3](routing.md#3--routing-by-complexity-heuristic) |
+| `complexity` + `llm` | small model as judge | [routing.md section 4](routing.md#4--routing-by-complexity-llm-classifier) |
+| `hybrid` | higher of length and complexity | [routing.md section 5](routing.md#5--deciding-the-tier-length-complexity-hybrid) |
 
 ---
 
-## 4. 📏 Routing by length
+## 4. 🎯 Backend, model rewrite and key hygiene
 
-> ⚡ **Short:** Longer prompt, bigger model. The policy estimates tokens as characters divided by 4 and compares with `length-threshold-tokens`.
+> ⚡ **Short:** The policy writes the routed model into the body, picks Foundry or the local Ollama, and never forwards the client's key.
+
+```xml
+<set-variable name="isOllama" value="@(((string)context.Variables[&quot;routedModel&quot;]).Length &gt; 0 &amp;&amp; (&quot;,{{ollama-models}},&quot;).ToLowerInvariant().Contains(&quot;,&quot; + ((string)context.Variables[&quot;routedModel&quot;]).ToLowerInvariant() + &quot;,&quot;))" />
+<set-variable name="isMai" value="@(((string)context.Variables[&quot;routedModel&quot;]).Length &gt; 0 &amp;&amp; (&quot;,{{mai-deployments}},&quot;).ToLowerInvariant().Contains(&quot;,&quot; + ((string)context.Variables[&quot;routedModel&quot;]).ToLowerInvariant() + &quot;,&quot;))" />
+<set-body>@{
+    var b = (JObject)context.Variables["body"];
+    b["model"] = (string)context.Variables["routedModel"];
+    // MAI models only accept max_completion_tokens (chat completions)
+    if ((bool)context.Variables["isMai"] &amp;&amp; b["max_tokens"] != null) {
+        b["max_completion_tokens"] = b["max_tokens"];
+        b.Remove("max_tokens");
+    }
+    // Ollama's OpenAI surface only honours max_tokens ...
+    if ((bool)context.Variables["isOllama"] &amp;&amp; b["max_completion_tokens"] != null) {
+        if (b["max_tokens"] == null) { b["max_tokens"] = b["max_completion_tokens"]; }
+        b.Remove("max_completion_tokens");
+    }
+    return b.ToString();
+}</set-body>
+<choose>
+  <when condition="@((bool)context.Variables[&quot;isOllama&quot;])">
+    <set-backend-service backend-id="asgard-ollama" />
+    <set-header name="Authorization" exists-action="override">
+      <value>Basic {{ollama-basic-auth}}</value>
+    </set-header>
+    <set-header name="ngrok-skip-browser-warning" exists-action="override">
+      <value>1</value>
+    </set-header>
+    <set-variable name="routeReason" value="@(&quot;local-ollama;&quot; + (string)context.Variables[&quot;routeReason&quot;])" />
+  </when>
+  <otherwise>
+    <set-backend-service backend-id="@((bool)context.Variables[&quot;isMai&quot;] ? &quot;asgard-foundry-mai&quot; : &quot;asgard-foundry&quot;)" />
+    <authentication-managed-identity resource="https://cognitiveservices.azure.com" />
+  </otherwise>
+</choose>
+<!-- never forward the client's APIM key to the backend -->
+<set-header name="api-key" exists-action="delete" />
+<set-query-parameter name="api-version" exists-action="delete" />
+```
 
 **🔬 In detail:**
 
-```
-promptTokens = promptText.Length / 4
-lengthTier   = tokens < T ? pym : tokens < 4*T ? stark : thanos      (T = length-threshold-tokens, default 500)
-```
+| Routed model is in… | Backend | Auth | Extra |
+|---|---|---|---|
+| `ollama-models` | `asgard-ollama` (ngrok) | basic auth from `ollama-basic-auth` | `max_completion_tokens` → `max_tokens`; reason gets prefix `local-ollama;` |
+| `mai-deployments` | `asgard-foundry-mai` | managed identity | `max_tokens` → `max_completion_tokens` |
+| anything else | `asgard-foundry` | managed identity | – |
 
-| Prompt size | Estimated tokens | Tier |
-|---|---|---|
-| a short question (120 chars) | 30 | 🐜 `pym` |
-| a pasted email (3,000 chars) | 750 | 🦾 `stark` |
-| a pasted document (10,000 chars) | 2,500 | 🌌 `thanos` |
-
-- 💡 Why length: cheap to compute, predictable, no extra call. Big inputs need big context windows and often more careful models.
-- ⚠️ It is a rough guess. `chars / 4` fits English; other languages and code tokenize differently. Length says nothing about difficulty: a long, easy text still goes up.
-- Set it with `router-mode=length`. Notebook: `03_router_prompt_length`.
+- The named values `ollama-models` and `mai-deployments` are comma lists. `none` means off (named values cannot be empty).
+- `api-version` is deleted because the `/openai/v1` and `/mai/v1` backends do not take one.
+- More on the local backend: [local-ollama.md](local-ollama.md). More on key handling: [user.md](user.md) section 4.
 
 ---
 
-## 5. 🧮 Routing by complexity: heuristic
+## 5. 📈 Metrics and response headers
 
-> ⚡ **Short:** The policy scores the prompt with simple rules (code, "analyze", "compare", many questions, maths). A higher score means a bigger model. It is fast and free, but only a keyword guess.
+> ⚡ **Short:** Every call is counted per user and model, and the answer carries headers that tell the client what the router did.
 
-**🔬 In detail:** The text is lower-cased and scored. The policy computes this score on every call, so it is always available as a fallback.
-
-| 🔎 Signal | ➕ Points | Matches (substring) |
-|---|---|---|
-| 💻 Code or query | +2 | `` ``` ``, `def `, `class `, `select `, `function ` |
-| 🧠 Reasoning words | +1 each, **max 3** | `step by step`, `explain why`, `analyze`, `analyse`, `compare`, `trade-off`, `tradeoff`, `prove`, `derive`, `optimize`, `architecture`, `evaluate`, `design a`, `strategy`, `root cause`, `pros and cons` |
-| ❓ Several questions | +1 for 2–3 `?`, +2 for 4 or more | count of `?` |
-| ➗ Maths | +1 | `integral`, `theorem`, `equation`, `probability` |
-| 💬 Long conversation | +1 | more than 6 messages |
-
-The best possible score is 9.
-
-```
-heuristicTier = score < C ? pym : score < 2*C ? stark : thanos      (C = complexity-threshold, default 3)
+```xml
+<llm-emit-token-metric namespace="heimdal">
+  <dimension name="User" value="@((string)context.Variables[&quot;user&quot;])" />
+  <dimension name="Model" value="@((string)context.Variables[&quot;routedModel&quot;])" />
+  <dimension name="Tier" value="@((string)context.Variables[&quot;tier&quot;])" />
+  <!-- agent tag: clients send x-agent ...; max 5 custom dimensions, so it replaces Product -->
+  <dimension name="Agent" value="@(context.Request.Headers.GetValueOrDefault(&quot;x-agent&quot;, &quot;none&quot;))" />
+  <dimension name="API ID" />
+</llm-emit-token-metric>
 ```
 
-| Prompt | Score | Tier |
-|---|---|---|
-| "What is the capital of France?" | 0 | 🐜 `pym` |
-| "Compare REST and gRPC step by step and explain the trade-offs." | 3 (`compare`, `step by step`, `trade-off`) | 🦾 `stark` |
-| A code block, "analyze", "architecture", "evaluate" and four questions | 7 (2 + 3 + 2) | 🌌 `thanos` |
-
-- ⚠️ **False positives:** matching is plain substring. "first class", "function of the board" or "select a date" add code points. The score is a signal, not a judgement.
-- Set it with `router-mode=complexity` and `complexity-mode=heuristic`. Notebook: `04_router_complexity`.
-
----
-
-## 6. 🤖 Routing by complexity: LLM classifier
-
-> ⚡ **Short:** A small, cheap model reads the prompt and answers one word: `simple`, `medium` or `complex`. That is smarter than keywords, but it costs one extra call and some latency.
+```xml
+<outbound>
+  <base />
+  <set-header name="x-heimdal-user" exists-action="override">
+    <value>@((string)context.Variables["user"])</value>
+  </set-header>
+  <set-header name="x-heimdal-tier" exists-action="override">
+    <value>@((string)context.Variables["tier"])</value>
+  </set-header>
+  <set-header name="x-heimdal-model" exists-action="override">
+    <value>@((string)context.Variables["routedModel"])</value>
+  </set-header>
+  <set-header name="x-heimdal-route-reason" exists-action="override">
+    <value>@((string)context.Variables["routeReason"])</value>
+  </set-header>
+</outbound>
+```
 
 **🔬 In detail:**
 
-| Step | What happens |
+| 📨 Header | Meaning |
 |---|---|
-| 1️⃣ **When it runs** | Only if `router-mode` is not `length`, `complexity-mode` is `llm` **and** the request is auto (`isAuto`). Forced tiers and named deployments skip it |
-| 2️⃣ **The call** | `send-request` to `{{foundry-openai-base}}/chat/completions` with `{{model-classifier}}` (default `gpt-6-luna`), managed identity, `timeout="15"`, `max_completion_tokens` 16 |
-| 3️⃣ **The prompt** | A system message ("reply with exactly one word: simple, medium or complex") plus the prompt text, cut to the first 4,000 characters |
-| 4️⃣ **The verdict** | Answer starting with `simple` → 0 (`pym`), `medium` → 1 (`stark`), `complex` → 2 (`thanos`) |
-| 5️⃣ **Fallback** | Error, timeout, non-200 or an unexpected word → `llmTier = -1`, and the **heuristic score is used instead** |
-
-- 👁️ `x-heimdal-route-reason` ends with `llmTier=-1` when the classifier did not decide. Check it to know which signal won.
-- 💸 The classifier call is a separate `send-request`. It is not part of the user's token metrics, but it is billed on the Foundry side and adds latency to every auto request.
-- ⚠️ The classifier sees only the first 4,000 characters, and its answer is not deterministic.
-- Set it with `complexity-mode=llm`. Notebook: `04_router_complexity`.
-
----
-
-## 7. 🎯 Deciding the tier (length, complexity, hybrid)
-
-> ⚡ **Short:** `router-mode` picks which signal counts. `length` uses size, `complexity` uses difficulty, `hybrid` takes the **higher** of the two. The default is `hybrid` + `heuristic`.
-
-**🔬 In detail:**
-
-```mermaid
-flowchart TD
-  A{body.model} -- tier-pym / stark / thanos --> T1[🔒 forced tier]
-  A -- other deployment name --> T2[🎯 explicit: use as sent]
-  A -- empty / auto / heimdal-auto --> M{router-mode}
-  M -- length --> L[📏 lengthTier]
-  M -- complexity --> C[🧮 complexityTier]
-  M -- hybrid --> H[⬆️ max of both]
-  C -.- Q[LLM tier if it answered, else heuristic tier]
-  H -.- Q
-```
-
-| `router-mode` | Tier is | Good when |
-|---|---|---|
-| `length` | `lengthTier` | you want predictable, explainable routing |
-| `complexity` | LLM tier, or heuristic tier if the LLM did not answer | short prompts can be hard |
-| `hybrid` (default) | `max(lengthTier, complexityTier)` | you never want a long *or* hard prompt on the small model |
-
-Then `routedModel` is read from `model-tier-pym` / `model-tier-stark` / `model-tier-thanos`. An explicit deployment name is used as sent.
-
-Example, default settings: a 3,000-character prompt (750 tokens → `stark`) with score 7 (→ `thanos`) goes to `thanos`, because hybrid takes the maximum.
-
----
-
-## 8. 🕹️ Client overrides
-
-> ⚡ **Short:** A client can skip the router by sending `tier-pym`, `tier-stark`, `tier-thanos` or a concrete deployment name as `model`.
-
-**🔬 In detail:**
-
-| `body.model` | `x-heimdal-tier` | `x-heimdal-route-reason` |
-|---|---|---|
-| missing, `auto`, `heimdal-auto` | `pym` / `stark` / `thanos` | `mode=hybrid;complexity=heuristic;tokens~30;score=0;llmTier=-1` |
-| `tier-thanos` (any `tier-*`) | that tier | `client-forced-tier` |
-| `gpt-5-6-terra` (a deployment) | `explicit` | `client-selected-deployment` |
-
-- The token limit (section 2) always applies, even with an override.
-- 🧪 Demo-grade: there is no rule that stops a standard user from forcing `tier-thanos`. The only guard is the token limit.
-
----
-
-## 9. 🔀 Backend, metrics and headers
-
-> ⚡ **Short:** The policy rewrites `model` in the body, picks Foundry or the local Ollama, hides the client key, then emits per-user metrics and routing headers.
-
-**🔬 In detail:**
-
-**Which backend**
-
-| Routed model is in… | Backend | Auth |
-|---|---|---|
-| `ollama-models` | `asgard-ollama` (ngrok) | basic auth from `ollama-basic-auth`; `max_completion_tokens` → `max_tokens`; reason gets prefix `local-ollama;` |
-| `mai-deployments` | `asgard-foundry-mai` | managed identity; `max_tokens` → `max_completion_tokens` |
-| anything else | `asgard-foundry` | managed identity |
-
-The policy always deletes the `api-key` header and the `api-version` query parameter before it forwards. Details: [user.md](user.md) section 4 and [local-ollama.md](local-ollama.md).
-
-**What gets recorded**
-
-| 📈 Where | What |
-|---|---|
-| `llm-emit-token-metric` (namespace `heimdal`) | token counts per `User`, `Model`, `Tier`, `Agent` (from the optional `x-agent` header), `API ID` |
 | `x-heimdal-user` | the subscription name |
 | `x-heimdal-tier` | `pym`, `stark`, `thanos` or `explicit` |
 | `x-heimdal-model` | the deployment that really answered |
-| `x-heimdal-route-reason` | why: mode, estimated tokens, score, LLM tier |
-| `x-heimdal-remaining-tokens` | tokens left in the minute |
+| `x-heimdal-route-reason` | why: mode, estimated tokens, score, LLM tier (see [routing.md](routing.md#6--client-overrides-and-the-route-reason)) |
+| `x-heimdal-remaining-tokens` | tokens left in the minute (set by `llm-token-limit`) |
 
-See [workbook.md](workbook.md) for the dashboard.
-
----
-
-## 10. 🧬 Embeddings policy
-
-> ⚡ **Short:** `/embeddings` has no router. `heimdal-auto` simply means the embedding model.
-
-**🔬 In detail:**
-- [bifrost-embeddings.xml](../policies/bifrost-embeddings.xml) has **no `<base />`**, so the API-level router does not run. The `llm-*` policies do not support the embeddings schema, so it uses classic policies.
-- `rate-limit-by-key`: 120 calls per minute per subscription (calls, not tokens).
-- `model`: missing, `auto` or `heimdal-auto` becomes `{{model-embedding}}` (`text-embedding-3-small`). Any other name is used as sent. Ollama models in `ollama-models` go to the local backend.
-- The `Embedding Tokens` metric uses `usage.total_tokens`, split by `User`, `Model` and `Agent`.
+- `Agent` comes from the optional `x-agent` request header. It is a tag, never an identity.
+- Dashboards for these metrics: [workbook.md](workbook.md).
 
 ---
 
-## 11. 🛡️ MCP policy
-
-> ⚡ **Short:** The MCP tools are governed like the models: per-user rate limit, and the Function key stays inside APIM.
-
-**🔬 In detail:**
-- [shield-mcp.xml](../policies/shield-mcp.xml): `rate-limit-by-key` 30 calls per minute per subscription.
-- It sets `x-functions-key` from `{{shield-mcp-key}}`, rewrites the URI to `/runtime/webhooks/mcp` and deletes `api-key` and `Ocp-Apim-Subscription-Key`.
-- `forward-request buffer-response="false"` keeps the MCP stream unbuffered. That is why the policy never touches `context.Response.Body`.
-- The Function accepts traffic only from APIM's VNet subnet. Notebook: `06_shield_mcp_via_bifrost`.
-
----
-
-## 12. 🎛️ Changing the behaviour at runtime
+## 6. 🎛️ Changing the behaviour at runtime
 
 > ⚡ **Short:** All routing settings are APIM named values. Change them and the next requests use them, with no redeploy.
 

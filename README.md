@@ -22,7 +22,7 @@ Models run in **Microsoft Foundry** ☁️, infrastructure is **Bicep** 🦾 in 
 | A playground: change router modes, limits and models at runtime | Cost-optimised: APIM StandardV2 and Foundry bill while deployed |
 | Notebooks that explain each APIM LLM feature step by step | Secured for real users: public endpoints, subscription keys as identity |
 
-📚 **Docs:** [📖 story.md](story.md) – the notebooks as a story · [🌈 docs/apim-definition.md](docs/apim-definition.md) – what is set up in APIM · [🔍 docs/apim-integration.md](docs/apim-integration.md) – how it works · [🛡️ docs/user.md](docs/user.md) – how APIM identifies the user · [📜 docs/policies.md](docs/policies.md) – the policies and how routing (length, heuristic, LLM) decides · [📊 docs/workbook.md](docs/workbook.md) – what the Azure workbook shows · [🦙 docs/local-ollama.md](docs/local-ollama.md) – the optional local Ollama backend in detail
+📚 **Docs:** [📖 story.md](story.md) – the notebooks as a story · [🌈 docs/apim-definition.md](docs/apim-definition.md) – what is set up in APIM · [🔍 docs/apim-integration.md](docs/apim-integration.md) – how it works · [🛡️ docs/user.md](docs/user.md) – how APIM identifies the user · [📜 docs/policies.md](docs/policies.md) – the policies with their XML · [🔀 docs/routing.md](docs/routing.md) – how routing (length, heuristic, LLM) decides · [🧬 docs/embeddings-mcp-policies.md](docs/embeddings-mcp-policies.md) – embeddings and MCP policies · [📊 docs/workbook.md](docs/workbook.md) – what the Azure workbook shows · [🦙 docs/local-ollama.md](docs/local-ollama.md) – the optional local Ollama backend in detail
 
 ---
 
@@ -251,7 +251,7 @@ Routing applies to `POST /chat/completions` and `POST /responses`; `POST /embedd
 | `azure.yaml`, `infra/azd/` | **Primary deploy path**: `azd up` entry point (subscription-scope wrapper, preprovision hook `scripts/ollama_tunnel.py` for the optional local Ollama, postdeploy hook `scripts/azd_hook.py`) |
 | `scripts/deploy.py`, `teardown.py` | Python wrappers around `az` (alternative to azd); `azd_hook.py` is the azd postdeploy hook. Both write `.env` for the notebooks |
 | `infra/workbooks/` | Azure Monitor workbook: token usage per user / model per user, local Ollama calls vs Foundry |
-| `docs/` | [APIM definition](docs/apim-definition.md), [integration deep dive](docs/apim-integration.md), [user identity](docs/user.md), [policies and routing](docs/policies.md), [workbook](docs/workbook.md), [local Ollama](docs/local-ollama.md) |
+| `docs/` | [APIM definition](docs/apim-definition.md), [integration deep dive](docs/apim-integration.md), [user identity](docs/user.md), [policies](docs/policies.md), [routing](docs/routing.md), [embeddings and MCP policies](docs/embeddings-mcp-policies.md), [workbook](docs/workbook.md), [local Ollama](docs/local-ollama.md) |
 | `notebooks/` | `00`–`09` demos (above) and the shared [heimdal_helpers.py](notebooks/heimdal_helpers.py), story in [story.md](story.md) |
 
 ### 🦸 Naming (MCU theme)
