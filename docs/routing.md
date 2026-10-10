@@ -163,7 +163,7 @@ The best possible score is 9. With C = 3: below 3 is `pym`, 3 to 5 is `stark`, 6
 
 ## 4. 🤖 Routing by complexity: LLM classifier
 
-> ⚡ **Short:** A small, cheap model reads the prompt and answers one word: `simple`, `medium` or `complex`. That is smarter than keywords, but it costs one extra call and some latency.
+> ⚡ **Short:** A small, cheap model reads the prompt and answers one word: `simple`, `medium` or `complex`. That is smarter than keywords, but it is **one extra billed model call** and some latency per request ([cost details](#-does-the-classifier-cost-extra)).
 
 ```xml
 <set-variable name="llmTier" value="@(-1)" />
@@ -218,9 +218,28 @@ The best possible score is 9. With C = 3: below 3 is `pym`, 3 to 5 is `stark`, 6
 | 5️⃣ **Fallback** | Error (`ignore-error`), timeout, non-200 or an unexpected word → `llmTier = -1`, and the **heuristic tier is used instead** |
 
 - 👁️ `x-heimdal-route-reason` ends with `llmTier=-1` when the classifier did not decide. Check it to know which signal won.
-- 💸 The classifier call is a separate `send-request`. It is not part of the user's token metrics, but it is billed on the Foundry side and adds latency to every auto request. (Inferred from the policy structure, not measured.)
 - ⚠️ The classifier sees only the first 4,000 characters, and its answer is not deterministic.
 - 🎛️ Use it with `complexity-mode=llm`. Notebook: `04_router_complexity`.
+
+### 💸 Does the classifier cost extra?
+
+> ⚡ **Short:** **Yes.** It is not a built-in, pre-priced APIM feature. It is a normal model call to your own Foundry deployment (`model-classifier`), billed like any other call, on top of the user's real request. The heuristic and `length` modes cost nothing extra.
+
+**🔬 In detail:**
+
+| 💰 Cost item | `length` | `heuristic` | `llm` |
+|---|---|---|---|
+| Extra model call per request | ❌ | ❌ | ✅ one call to `{{model-classifier}}` |
+| Extra Foundry tokens | 0 | 0 | input ≈ 1,000 tokens at most (4,000 chars / 4) + about 60 for the system message; output at most 16 |
+| Extra latency | none | none | one round trip, up to the 15 s timeout |
+| Needs a model deployment | no | no | yes, `model-classifier` (default `gpt-6-luna`, the cheapest tier) |
+
+- **Per request, not per user:** the call runs on every *auto* request (`model` missing, `auto` or `heimdal-auto`). Forced tiers (`tier-*`) and named deployments skip it.
+- **Even when length already decided:** in `hybrid` mode the classifier still runs when `complexity-mode=llm`, also for a long prompt that `length` has already put on `thanos`. There is no short-circuit.
+- **Failures still cost:** a timeout or a bad answer falls back to the heuristic, but the tokens of a call that reached the model are still billed.
+- **Not visible to the user's limits:** the call is a separate `send-request`. It does not count against the user's `llm-token-limit` and is not in the `heimdal` token metrics, so classifier spend is hidden from the per-user view. Find it in the Foundry usage of the classifier deployment. (Inferred from the policy structure, not measured.)
+- **The savings argument:** the extra cost pays off if it moves enough prompts from `thanos` to `stark` or `pym`. A call of about 1,000 input tokens on the cheapest model is small next to one big-model answer, but this repo has no measurement, so check it with your own traffic and your own price list.
+- 💡 To keep cost at zero, use `complexity-mode=heuristic` (the default).
 
 ---
 
