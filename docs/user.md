@@ -132,7 +132,7 @@ Clients authenticate to the gateway. The gateway uses its own identity to call t
 
 ### 🧪 Example policy (not deployed)
 
-This would replace step 1 ("Who is calling?") and step 2 (the token limit) of [bifrost-router.xml](../policies/bifrost-router.xml):
+This would replace step 1 ("Who is calling?") and step 2 (the token limit) of [bifrost-router.xml](../policies/bifrost-router.xml) (both steps with their real XML: [policies.md](policies.md)):
 
 ```xml
 <!-- 1. Validate the token and keep it for later expressions -->

@@ -102,7 +102,7 @@ The router can pick the model, so this section shows where requests actually wen
 
 ### 🧭 What the `Tier` column means
 
-`Tier` here is the **routing tier chosen by the router**, not the product tier of the user. It comes from [bifrost-router.xml](../policies/bifrost-router.xml).
+`Tier` here is the **routing tier chosen by the router**, not the product tier of the user. It comes from [bifrost-router.xml](../policies/bifrost-router.xml); how it is decided: [routing.md](routing.md).
 
 | 🏷️ Value | Meaning |
 |---|---|

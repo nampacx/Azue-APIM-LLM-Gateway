@@ -70,46 +70,23 @@ Defined in `infra/modules/apim-apis.bicep`.
 ## 🧠 3. The LLM API (`bifrost-llm`)
 
 - 🛣️ Path `bifrost/v1`, operations `POST /chat/completions`, `POST /responses` (both routed by `bifrost-router.xml`) and `POST /embeddings` → OpenAI-compatible, so `base_url = https://<apim>.azure-api.net/bifrost/v1` is all a client needs.
-- 🧬 `/embeddings` has its own operation policy **without `<base />`** (`bifrost-embeddings.xml`): no tiers, `heimdal-auto` → `{{model-embedding}}`, a per-user call rate limit and an `Embedding Tokens` metric (`emit-metric`; the `llm-*` policies don't support the embeddings schema).
+- 🧬 `/embeddings` has its own operation policy **without `<base />`** (`bifrost-embeddings.xml`): no tiers, `heimdal-auto` → `{{model-embedding}}`, a per-user call rate limit and an `Embedding Tokens` metric (`emit-metric`; the `llm-*` policies don't support the embeddings schema). XML and details: [embeddings-mcp-policies.md](embeddings-mcp-policies.md).
 - 🎭 The API's `serviceUrl` is a placeholder; the real backend is chosen **inside the policy** with `set-backend-service`.
 - 🔌 Two APIM **backends** exist (`apim.bicep`): `asgard-foundry` (`…openai.azure.com/openai/v1`) and `asgard-foundry-mai` (`…services.ai.azure.com/mai/v1`, for MAI models).
 
-### 🔬 Policy walkthrough (`policies/bifrost-router.xml`)
+### 🔬 What the router policy does (`policies/bifrost-router.xml`)
 
-Order in the `<inbound>` section:
+> 📜 Every step with its real XML, a short and a detailed explanation: [policies.md](policies.md) (identity, limit, backend, metrics) and [routing.md](routing.md) (length, heuristic, LLM, hybrid).
 
-| Step | What happens | Policy element |
+| Step | What happens | Details |
 |---|---|---|
-| 🚫 0 | Reject a subscription key sent in the URL (400) | `choose` / `return-response` |
-| 🪪 1 | Resolve caller: `user = Subscription.Name` (or `anonymous`) | `set-variable user` |
-| 🔨 2 | **Token limit per user per minute.** Counter key = subscription id; a `choose` on the product picks one of two `llm-token-limit` policies with a static `{{tpm-premium}}` (product `infinity-gauntlet`) or `{{tpm-standard}}` limit. Prompt tokens are *estimated* before the call. Returns HTTP **429** when exceeded and a header `x-heimdal-remaining-tokens` | `llm-token-limit` |
-| 📖 3a | Parse body once into `body`; extract `requestedModel` and `isAuto` (empty, `heimdal-auto` or `auto`); flatten the prompt into `promptText` – chat `messages[]` or Responses `instructions` + `input` (string or items), string and multi-part content | `set-variable` |
-| 📏 3b | **Length signal**: `promptTokens = chars / 4`. Tier index = `<T` → 0, `<4T` → 1, else 2 (`T = {{length-threshold-tokens}}`) | `lengthTier` |
-| 🧮 3c | **Complexity signal (heuristic)**: score from code markers (+2), reasoning keywords (max +3), multiple questions (+1/+2), math words (+1), long conversation >6 msgs (+1). Tier index: `<C` → 0, `<2C` → 1, else 2 (`C = {{complexity-threshold}}`) | `complexityScore`, `heuristicTier` |
-| 🤖 3d | **Complexity signal (LLM)**: only if `router-mode != length`, `complexity-mode == llm` and the model is auto (`isAuto`). Sends the first 4000 chars to the small `{{model-classifier}}` and expects `simple` / `medium` / `complex`. Any error or odd answer → `-1` → heuristic is used instead (`ignore-error="true"`) | `send-request`, `llmTier` |
-| 🎯 3e | **Decide**: tier, deployment and a human-readable reason (see below) | `tier`, `routedModel`, `routeReason` |
-| 🔁 4 | Rewrite `model` in the body to the deployment, pick backend, authenticate with the managed identity, remove the client's `api-key` | `set-body`, `set-backend-service`, `authentication-managed-identity`, `set-header delete` |
-| 👁️ 5 | Emit per-user token metrics | `llm-emit-token-metric` |
+| 🪪 1 | Resolve the caller from the subscription (a key in the URL gets 400) | [policies.md](policies.md#1--caller-identity) |
+| 🔨 2 | Per-user token limit, 429 when exceeded | [policies.md](policies.md#2--token-limit-mjolnir) |
+| 🧭 3 | Pick a tier: length, heuristic score, optional LLM classifier ([extra cost](routing.md#-does-the-classifier-cost-extra)), or a client override | [routing.md](routing.md) |
+| 🔁 4 | Rewrite `model`, pick the backend, authenticate with the managed identity, remove the client's `api-key` | [policies.md](policies.md#4--backend-model-rewrite-and-key-hygiene) |
+| 👁️ 5 | Emit per-user token metrics and the `x-heimdal-*` headers | [policies.md](policies.md#5--metrics-and-response-headers) |
 
-`<backend>` just forwards the request. `<outbound>` adds the routing headers.
-
-### 🎯 How the tier is decided
-
-| Requested `model` | Result | `x-heimdal-route-reason` |
-|---|---|---|
-| `tier-pym` \| `tier-stark` \| `tier-thanos` | that tier | `client-forced-tier` |
-| any other non-empty name | **explicit**: used as the deployment | `client-selected-deployment` |
-| empty, `heimdal-auto` or `auto` | automatic, by `{{router-mode}}` (below) | `mode=…;complexity=…;tokens~…;score=…;llmTier=…` |
-
-Automatic modes:
-
-| `router-mode` | Tier is |
-|---|---|
-| `length` | `lengthTier` |
-| `complexity` | LLM tier if available, else heuristic tier |
-| `hybrid` | `max(lengthTier, complexityTier)` |
-
-Tier → deployment comes from the `model-tier-pym|stark|thanos` named values.
+`<backend>` just forwards the request. Tier → deployment comes from the `model-tier-pym|stark|thanos` named values.
 
 ### 🦾 MAI models
 
@@ -131,15 +108,7 @@ Only with `HEIMDAL_ENABLE_OLLAMA=true`. A model on the demo machine, reached thr
 
 ### 🏷️ Response headers (what the client sees)
 
-| Header | Content |
-|---|---|
-| `x-heimdal-user` | subscription name |
-| `x-heimdal-tier` | `pym` / `stark` / `thanos` / `explicit` |
-| `x-heimdal-model` | deployment that served the call |
-| `x-heimdal-route-reason` | e.g. `mode=hybrid;complexity=heuristic;tokens~120;score=3;llmTier=-1`; prefixed `local-ollama;` for Ollama |
-| `x-heimdal-remaining-tokens` | what is left of the per-minute budget |
-
-`ask()` in `heimdal_helpers.py` reads exactly these.
+`x-heimdal-user`, `x-heimdal-tier`, `x-heimdal-model`, `x-heimdal-route-reason` and `x-heimdal-remaining-tokens`: meaning and XML in [policies.md](policies.md#5--metrics-and-response-headers). `ask()` in `heimdal_helpers.py` reads exactly these.
 
 > ⚠️ **Gotcha – `{{named-value}}` in policy:** `{{name}}` is substituted by APIM **textually**, before the C# expression compiles. That is why numeric ones are wrapped as `int.Parse("{{length-threshold-tokens}}")` and string ones are quoted. A missing named value fails the policy, so every name used in the XML must exist in `apim.bicep`.
 
@@ -152,7 +121,7 @@ Only with `HEIMDAL_ENABLE_OLLAMA=true`. A model on the demo machine, reached thr
 - 🧑‍🔧 `rbac.bicep` also grants the demo operator (`deployerPrincipalId`: the azd user / the `az login` identity of `deploy.py`) **Azure AI User** on the Foundry account (notebook 07) and **Log Analytics Reader** (`kql()`).
 - 🎟️ The policy requests a token for `https://cognitiveservices.azure.com` with `authentication-managed-identity`.
 - ⏱️ `apim-apis` has `dependsOn: [rbac]` so the roles exist before the first call.
-- 🤖 The classifier call (`send-request`) authenticates the same way.
+- 🤖 The classifier call (`send-request`) authenticates the same way. It is billed like any other call to that deployment: [cost of the classifier](routing.md#-does-the-classifier-cost-extra).
 - 🦙 Exception: the optional local Ollama backend has no Entra identity. The policy sends the ngrok basic-auth credentials from the secret named value `ollama-basic-auth` instead.
 
 ---
@@ -164,10 +133,7 @@ Only with `HEIMDAL_ENABLE_OLLAMA=true`. A model on the demo machine, reached thr
 
 ### 📜 Policy (`shield-mcp.xml`)
 
-- ⏱️ `rate-limit-by-key`: 30 calls/minute per subscription.
-- 🔑 Adds `x-functions-key` = `{{shield-mcp-key}}` (the Functions `mcp_extension` system key).
-- 🗑️ Deletes the client's `api-key` / `Ocp-Apim-Subscription-Key` so they never reach the Function.
-- 🌊 `forward-request buffer-response="false"` and **no access to `context.Response.Body`** – either one would buffer the stream and break MCP streaming.
+Rate limit (30 calls/minute per subscription), function key injection, client credentials removed, response never buffered. The XML line by line: [embeddings-mcp-policies.md](embeddings-mcp-policies.md#5--mcp-rate-limit-and-function-key).
 
 ### 🗝️ Where the function key comes from
 
@@ -216,12 +182,12 @@ This runs `az apim nv update …`; the policy sees the new value within about a 
 
 ## 🔄 8. Request lifecycle (example)
 
-`ask("Compare Kafka and SQS step by step", user="thor")`:
+`ask("Compare Kafka and SQS step by step and explain the trade-offs", user="thor")`:
 
 1. 🧑‍💻 SDK sends `POST /bifrost/v1/chat/completions` with `api-key: <thor key>`, `model: heimdal-auto`.
 2. 🪪 APIM validates the subscription → `user = thor`, product `avengers-initiative`.
 3. 🔨 `llm-token-limit` checks thor's per-minute budget (standard TPM).
-4. 🧭 Router computes length and complexity (`compare` + `step by step` → score ≥ 2), mode `hybrid` → e.g. tier `stark`.
+4. 🧭 Router computes length (about 15 tokens → `pym`) and complexity (`compare` + `step by step` + `trade-off` → score 3 → `stark`). Mode `hybrid` takes the higher one: tier `stark`. See [routing.md](routing.md).
 5. 🔁 Body `model` is rewritten to the stark deployment; APIM calls `asgard-foundry` with its managed identity.
 6. 🏷️ Response returns; outbound adds `x-heimdal-*` headers.
 7. 📈 Token metric (user=thor, model, tier) and an LLM log row are emitted; they appear in KQL after a few minutes.
@@ -235,5 +201,5 @@ This runs `az apim nv update …`; the policy sees the new value within about a 
 | 🧠 add or change a tier model | change `tierModels` (and `models`) in `infra/config/heimdal.json`, or set the `model-tier-*` named value live |
 | 👤 add a user | add to `demoUsers` in `infra/config/heimdal.json`; a subscription is created and the deploy script / azd hook writes its key to `.env` as `HEIMDAL_KEY_<NAME>` |
 | 🦙 serve a local model | `azd env set HEIMDAL_ENABLE_OLLAMA true` and `HEIMDAL_OLLAMA_MODEL <name>`, then `azd provision` (README → *Local Ollama via ngrok*) |
-| 🧮 add a scoring rule | edit `complexityScore` in `bifrost-router.xml` and redeploy `apim-apis` |
+| 🧮 add a scoring rule | edit `complexityScore` in `bifrost-router.xml` ([how the score works](routing.md#3--routing-by-complexity-heuristic)) and redeploy `apim-apis` |
 | 🏭 harden for production | Entra/JWT validation instead of subscription keys, private endpoints (inbound to APIM, Foundry, Function), Key Vault-backed named values, `token-quota` budgets, content safety policies |

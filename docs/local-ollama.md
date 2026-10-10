@@ -161,7 +161,7 @@ The output `HEIMDAL_OLLAMA_ENABLED` tells you whether the backend was really wir
 
 ## 5. 🧭 What the policy does on each call
 
-All of this is in [bifrost-router.xml](../policies/bifrost-router.xml), step 4. Steps 1–3 of the policy (user, token limit, router) run as for every call.
+All of this is in [bifrost-router.xml](../policies/bifrost-router.xml), step 4. Steps 1–3 of the policy (user, token limit, router) run as for every call: see [policies.md](policies.md) and [routing.md](routing.md).
 
 | # | Step | Detail |
 |---|---|---|

@@ -26,9 +26,9 @@
 | [`infra/modules/apim-apis.bicep`](../infra/modules/apim-apis.bicep) | products, APIs, operations, policies, subscriptions |
 | [`infra/modules/rbac.bicep`](../infra/modules/rbac.bicep) | role assignments for APIM's managed identity on Foundry (+ demo operator roles) |
 | [`infra/modules/foundry-connection.bicep`](../infra/modules/foundry-connection.bicep) | Foundry project connection `bifrost-apim` to the gateway |
-| [`policies/bifrost-router.xml`](../policies/bifrost-router.xml) | policy of the LLM API (chat completions + responses) |
-| [`policies/bifrost-embeddings.xml`](../policies/bifrost-embeddings.xml) | operation policy of `POST /embeddings` |
-| [`policies/shield-mcp.xml`](../policies/shield-mcp.xml) | policy of the MCP API |
+| [`policies/bifrost-router.xml`](../policies/bifrost-router.xml) | policy of the LLM API (chat completions + responses). Explained in [policies.md](policies.md) and [routing.md](routing.md) |
+| [`policies/bifrost-embeddings.xml`](../policies/bifrost-embeddings.xml) | operation policy of `POST /embeddings`. Explained in [embeddings-mcp-policies.md](embeddings-mcp-policies.md) |
+| [`policies/shield-mcp.xml`](../policies/shield-mcp.xml) | policy of the MCP API. Explained in [embeddings-mcp-policies.md](embeddings-mcp-policies.md#5--mcp-rate-limit-and-function-key) |
 
 ---
 
@@ -128,6 +128,8 @@ Policy: `rate-limit-by-key` 30 calls/min per subscription → inject `x-function
 | `foundry-openai-base` | Foundry v1 URL | base URL for the classifier `send-request` |
 | `tpm-standard` / `tpm-premium` | `5000` / `100000` | tokens per minute per product |
 | `shield-mcp-key` 🔒 | set by deploy script | Function `mcp_extension` system key (secret); kept on redeploy via the `mcpKey` parameter |
+
+> 📜 What each router value does in the policy: [routing.md](routing.md) and [policies.md](policies.md#6--changing-the-behaviour-at-runtime).
 
 > ⚡ Change them live with `set_router(...)` from `notebooks/heimdal_helpers.py` (wraps `az apim nv update`). A Bicep redeploy resets the router values to `infra/config/heimdal.json`. How to use it: [apim-integration.md](apim-integration.md).
 
