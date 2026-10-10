@@ -4,10 +4,10 @@
 
 Asgard (your company) has many heroes (users and agents) who all want to talk to powerful models (**Microsoft Foundry**).
 Letting everyone call the models directly means no idea who spends what, no limits, and no way to steer traffic.
-So we put a guardian on the bridge: **Azure API Management – the Bifrost**. The notebooks walk through its powers, one chapter at a time.
+So we put a guardian on the bridge: **Azure API Management – the Bifrost**. The notebooks walk through its powers, one chapter at a time. Chapters 00–08 use only Foundry models. Chapter 09 is an optional extra lane to a model on your own laptop.
 
 ```
-⚡ 00 setup → 🌈 01 first call → 👁️ 02 usage → 📏 03 length → 🧠 04 complexity → 🔨 05 limits → 🛡️ 06 MCP → 🤖 07 Foundry agent → 🦸 08 agent framework → 🦙 09 local lane
+⚡ 00 setup → 🌈 01 first call → 👁️ 02 usage → 📏 03 length → 🧠 04 complexity → 🔨 05 limits → 🛡️ 06 MCP → 🤖 07 Foundry agent → 🦸 08 agent framework → 🦙 09 local lane (optional)
 ```
 
 What is configured in APIM is described in [docs/apim-definition.md](docs/apim-definition.md); how it works in
@@ -17,13 +17,13 @@ What is configured in APIM is described in [docs/apim-definition.md](docs/apim-d
 ## 🎬 Chapters
 
 ### ⚡ 00 · `00_setup_asgard` – Asgard awakens
-Shows the architecture, explains how to deploy (`scripts/deploy.py` or `azd up`) and checks that the `.env` written by
-the deployment is complete (gateway URL, user keys). **Run first.**
+Shows the architecture and the Python deploy path (`scripts/deploy.py`), then checks that the `.env` written by
+the deployment is complete (gateway URL, user keys). `azd up` is the main deploy path and writes the same `.env`: see the [README](README.md#-deploy-with-azd). **Run first.**
 
 ### 🌈 01 · `01_bifrost_basic_call` – Crossing the Bifrost
 The first call. An OpenAI-compatible request goes to the gateway with only a gateway URL and a personal key – no Foundry
 endpoint, no credentials. The response headers `x-heimdal-user|tier|model|route-reason` reveal who asked and which model answered.
-The same door also serves the **Responses API** (same router) and **embeddings**.
+The same door also serves the **Responses API** (same router) and **embeddings** (no router, see [docs/embeddings-mcp-policies.md](docs/embeddings-mcp-policies.md)). A short optional cell shows a local model; the full tour is chapter 09.
 
 ### 👁️ 02 · `02_all_seeing_eye_usage` – Token usage per user
 Five heroes (`thor`, `loki`, `hulk`, `black-widow`, `tony-stark`) generate traffic. The notebook then queries Log Analytics (KQL):
@@ -52,8 +52,8 @@ injected by the gateway. The Function itself only accepts traffic from APIM's VN
 Uses the bring-your-own-model connection to the gateway that the deployment created in the Foundry project and creates an agent on the router alias `heimdal-auto`.
 Every agent LLM call now flows through HEIMDAL and is attributed to `black-widow`. *(Uses preview SDKs.)*
 
-### 🦸 08 · `08_agent_framework_via_bifrost` – The finale
-A **Microsoft Agent Framework** agent (“Friday”) whose model calls *and* MCP tools both go through APIM – one key, one audit trail.
+### 🦸 08 · `08_agent_framework_via_bifrost` – Agents with tools
+The last chapter on Foundry models. A **Microsoft Agent Framework** agent (“Friday”) whose model calls *and* MCP tools both go through APIM – one key, one audit trail.
 The `x-agent` header tags the traffic so the agent appears as its own `Agent` dimension in the token metrics. *(Framework evolves quickly.)*
 
 ### 🦙 09 · `09_local_ollama_via_bifrost` – Heimdall's local lane *(optional)*
@@ -68,4 +68,4 @@ the tunnel refuses direct calls. It also sends the whole `pym` tier to the lapto
 
 ## 🏁 The moral
 One gateway gives you **identity** (who), **accounting** (how much), **control** (limits and routing) and **one door** for models and tools –
-without changing a line in the clients.
+cloud or on your own laptop – without changing a line in the clients.
