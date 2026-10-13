@@ -158,12 +158,14 @@ resource maiBackend 'Microsoft.ApiManagement/service/backends@2025-09-01-preview
 }
 
 // Local Ollama on the demo machine, exposed by an ngrok tunnel (basic-auth). OpenAI-compatible surface on /v1.
-resource ollamaBackend 'Microsoft.ApiManagement/service/backends@2025-09-01-preview' = if (ollamaEnabled) {
+// Always created: APIM validates that backend-id="asgard-ollama" exists when it parses the router policies, even when
+// Ollama is off. Disabled = placeholder URL; no request is routed here because ollama-models is "none".
+resource ollamaBackend 'Microsoft.ApiManagement/service/backends@2025-09-01-preview' = {
   parent: apim
   name: 'asgard-ollama'
   properties: {
     protocol: 'http'
-    url: '${ollamaUrl}/v1'
+    url: ollamaEnabled ? '${ollamaUrl}/v1' : 'https://ollama.invalid/v1'
     description: 'Local Ollama via ngrok (basic auth from named value ollama-basic-auth)'
   }
 }
