@@ -13,7 +13,7 @@ def run(*args: str) -> None:
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--resource-group", default="rg-heimdal-asgard-swc")
+    p.add_argument("--resource-group", default="rg-hmdl-dev")
     p.add_argument("--yes", action="store_true", help="skip confirmation")
     args = p.parse_args()
     if not args.yes and input(f"Delete resource group {args.resource_group}? [y/N] ").lower() != "y":

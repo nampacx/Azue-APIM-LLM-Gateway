@@ -3,7 +3,7 @@ targetScope = 'subscription'
 
 @minLength(1)
 @maxLength(32)
-@description('azd environment name, e.g. "heimdal-dev".')
+@description('azd environment name, e.g. "dev". Becomes the resource group `rg-hmdl-<environmentName>`.')
 param environmentName string
 
 @description('Azure region (also the subscription-level deployment location). Use swedencentral for model availability.')
@@ -39,7 +39,7 @@ param principalId string = ''
 param principalType string = 'User'
 
 resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = {
-  name: 'rg-heimdal-asgard-${environmentName}'
+  name: 'rg-hmdl-${environmentName}'
   location: location
   tags: {
     project: 'heimdal'
@@ -52,6 +52,7 @@ module heimdal '../main.bicep' = {
   scope: rg
   params: {
     location: location
+    environment: environmentName
     publisherEmail: publisherEmail
     enableMai: toLower(enableMai) == 'true'
     enableOllama: toLower(enableOllama) == 'true'

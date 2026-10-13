@@ -198,7 +198,7 @@ def azd_hook() -> None:
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Deploy HEIMDAL (APIM LLM/agent gateway) to Azure")
-    p.add_argument("--resource-group", default="rg-heimdal-asgard-swc")
+    p.add_argument("--resource-group", default="rg-hmdl-dev")
     p.add_argument("--location", default="swedencentral")
     p.add_argument("--email", default=os.environ.get("HEIMDAL_PUBLISHER_EMAIL", ""))
     p.add_argument("--check-models", action="store_true")

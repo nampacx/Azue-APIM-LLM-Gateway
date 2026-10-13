@@ -5,8 +5,11 @@ targetScope = 'resourceGroup'
 @description('Azure region. Sweden Central for model availability.')
 param location string = 'swedencentral'
 
-@description('Project prefix used in resource names.')
-param prefix string = 'heimdal'
+@description('Environment label (dev, test, prod). Tag only; the resource group name carries it.')
+param environment string = 'dev'
+
+@description('Project prefix used in resource names (vowels dropped to keep names short).')
+param prefix string = 'hmdl'
 
 @description('Short unique suffix to keep global names unique (storage, APIM, Foundry subdomain).')
 @minLength(3)
@@ -39,8 +42,8 @@ param ollamaModels string = ''
 @description('ngrok basic-auth credentials "user:password" protecting the tunnel; APIM sends them to the backend.')
 param ollamaAuth string = ''
 
-@description('Foundry project name. (-v2: the original name was blocked by a soft-deleted project during development.)')
-param foundryProjectName string = 'proj-${prefix}-avengers-v2'
+@description('Foundry project name.')
+param foundryProjectName string = 'proj-${prefix}-vngrs'
 
 @secure()
 @description('Function `mcp_extension` system key for the shield-mcp-key named value. Empty on the first deployment; the deploy script / azd hook passes the current key so a redeploy does not reset it.')
@@ -86,6 +89,7 @@ var ollamaOn = enableOllama && !empty(ollamaUrl) && !empty(ollamaModels)
 
 var tags = {
   project: 'heimdal'
+  environment: environment
   theme: 'mcu'
   purpose: 'apim-llm-gateway-demo'
 }
@@ -95,8 +99,8 @@ module network 'modules/network.bicep' = {
   name: 'network'
   params: {
     location: location
-    vnetName: 'vnet-${prefix}-bifrost-${suffix}'
-    nsgName: 'nsg-${prefix}-bifrost-${suffix}'
+    vnetName: 'vnet-${prefix}-bfrst-${suffix}'
+    nsgName: 'nsg-${prefix}-bfrst-${suffix}'
     tags: tags
   }
 }
@@ -105,8 +109,8 @@ module monitoring 'modules/monitoring.bicep' = {
   name: 'monitoring'
   params: {
     location: location
-    logName: 'log-${prefix}-allseeing-${suffix}'
-    appInsightsName: 'appi-${prefix}-allseeing-${suffix}'
+    logName: 'log-${prefix}-llsng-${suffix}'
+    appInsightsName: 'appi-${prefix}-llsng-${suffix}'
     tags: tags
   }
 }
@@ -124,7 +128,7 @@ module foundry 'modules/foundry.bicep' = {
   name: 'foundry'
   params: {
     location: location
-    accountName: 'fdry-${prefix}-asgard-${suffix}'
+    accountName: 'aif-${prefix}-sgrd-${suffix}'
     projectName: foundryProjectName
     models: activeModels
     workspaceId: monitoring.outputs.workspaceId
@@ -136,7 +140,7 @@ module apim 'modules/apim.bicep' = {
   name: 'apim'
   params: {
     location: location
-    apimName: 'apim-${prefix}-bifrost-${suffix}'
+    apimName: 'apim-${prefix}-bfrst-${suffix}'
     sku: apimSku
     publisherEmail: publisherEmail
     publisherName: publisherName
@@ -175,9 +179,9 @@ module mcp 'modules/mcp-function.bicep' = {
   name: 'shield-mcp'
   params: {
     location: location
-    functionAppName: 'func-${prefix}-shield-mcp-${suffix}'
-    planName: 'plan-${prefix}-shield-${suffix}'
-    storageName: take(toLower('st${prefix}${uniqueString(resourceGroup().id)}'), 24)
+    functionAppName: 'func-${prefix}-shld-mcp-${suffix}'
+    planName: 'asp-${prefix}-shld-${suffix}'
+    storageName: take(toLower(replace('st${prefix}${suffix}', '-', '')), 24)
     appInsightsConnectionString: monitoring.outputs.appInsightsConnectionString
     allowedSubnetId: network.outputs.apimSubnetId
     tags: tags
