@@ -37,7 +37,7 @@
 | Setting | Value |
 |---|---|
 | 📦 Resource | `Microsoft.ApiManagement/service` (API version `2025-09-01-preview`) |
-| 🏷️ Name | `apim-heimdal-bifrost-<suffix>` |
+| 🏷️ Name | `apim-hmdl-bfrst-<suffix>` |
 | 📏 SKU / capacity | parameter `sku` (`StandardV2` or `PremiumV2`), capacity `1` |
 | 🪪 Identity | **system-assigned managed identity** (used to call Foundry and App Insights) |
 | 🌐 Network | public gateway; **outbound VNet integration** (`snet-apim-outbound`) so the MCP Function can allow only APIM |

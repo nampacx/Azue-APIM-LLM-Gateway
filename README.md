@@ -87,7 +87,7 @@ The deployment grants the signed-in user *Azure AI User* (Foundry) and *Log Anal
 python -m venv .venv                              # then activate it: .venv\Scripts\activate (Windows) or source .venv/bin/activate
 pip install -r requirements.txt
 azd auth login && az login
-azd env new heimdal-dev
+azd env new dev
 azd env set AZURE_LOCATION swedencentral          # required: model availability, see below
 azd env set HEIMDAL_PUBLISHER_EMAIL you@contoso.com
 azd up
@@ -98,7 +98,7 @@ azd up
 | Step | 🔧 What happens |
 |---|---|
 | 0. preprovision | [scripts/ollama_tunnel.py](scripts/ollama_tunnel.py) prepares the optional local Ollama + ngrok tunnel. Does nothing unless `HEIMDAL_ENABLE_OLLAMA=true` |
-| 1. provision | [infra/azd/main.bicep](infra/azd/main.bicep) creates `rg-heimdal-asgard-<env>` and deploys [infra/main.bicep](infra/main.bicep) into it |
+| 1. provision | [infra/azd/main.bicep](infra/azd/main.bicep) creates `rg-hmdl-<env>` and deploys [infra/main.bicep](infra/main.bicep) into it |
 | 2. deploy | Publishes the Python Function in [src/shield-mcp](src/shield-mcp) |
 | 3. postdeploy | [scripts/azd_hook.py](scripts/azd_hook.py) injects the Function MCP key into the APIM named value `shield-mcp-key`, saves it as `HEIMDAL_MCP_KEY` and writes `.env` |
 
@@ -110,7 +110,7 @@ Set with `azd env set <NAME> <value>`. Values are mapped to Bicep parameters in 
 
 | 🔑 Variable | Bicep parameter | Set it? | Default | Meaning |
 |---|---|---|---|---|
-| `AZURE_ENV_NAME` | `environmentName` | ✅ by `azd env new` | – | Env name, max 32 chars. Becomes the resource group `rg-heimdal-asgard-<env>` |
+| `AZURE_ENV_NAME` | `environmentName` | ✅ by `azd env new` | – | Env name, max 32 chars. Becomes the resource group `rg-hmdl-<env>` |
 | `AZURE_LOCATION` | `location` | ✅ **required** | – | Use `swedencentral` (models are verified there) |
 | `HEIMDAL_PUBLISHER_EMAIL` | `publisherEmail` | ✅ **required** | – | APIM publisher e-mail |
 | `HEIMDAL_ENABLE_MAI` | `enableMai` | optional | `false` | `true` deploys `MAI-Thinking-1` (needs quota, see below) |
@@ -185,7 +185,7 @@ ask("Who guards the Bifrost?", user="thor", model="gemma4-e4b",
 
 ### 🛠️ Alternative: Python scripts (no azd)
 
-Same Bicep, driven by [scripts/deploy.py](scripts/deploy.py) and `az`. Writes the same `.env`. It reads `HEIMDAL_PUBLISHER_EMAIL` / `HEIMDAL_ENABLE_MAI` / `HEIMDAL_ENABLE_OLLAMA` from the shell environment and uses the fixed resource group `rg-heimdal-asgard-swc`.
+Same Bicep, driven by [scripts/deploy.py](scripts/deploy.py) and `az`. Writes the same `.env`. It reads `HEIMDAL_PUBLISHER_EMAIL` / `HEIMDAL_ENABLE_MAI` / `HEIMDAL_ENABLE_OLLAMA` from the shell environment and uses the fixed resource group `rg-hmdl-dev`.
 
 ```bash
 pip install -r requirements.txt
@@ -255,8 +255,10 @@ Routing applies to `POST /chat/completions` and `POST /responses`; `POST /embedd
 | `notebooks/` | `00`–`09` demos (above) and the shared [heimdal_helpers.py](notebooks/heimdal_helpers.py), story in [story.md](story.md) |
 
 ### 🦸 Naming (MCU theme)
-`rg-heimdal-asgard-swc` · `apim-heimdal-bifrost-*` · `vnet-heimdal-bifrost-*` · `fdry-heimdal-asgard-*` / `proj-heimdal-avengers-v2` · `*-allseeing-*` (monitoring) ·
-`func-heimdal-shield-mcp-*` · products `avengers-initiative` / `infinity-gauntlet` · users `thor, loki, hulk, black-widow, tony-stark` ·
+Pattern: `<CAF type>-hmdl-<workload>-<suffix>`. The workload names are MCU words without vowels (`bfrst` = bifrost, `sgrd` = asgard, `llsng` = allseeing, `shld` = shield, `vngrs` = avengers). `<suffix>` is 6 characters derived from the resource group id, so names stay unique and a redeploy keeps them.
+
+`rg-hmdl-<env>` · `apim-hmdl-bfrst-*` · `vnet-hmdl-bfrst-*` · `aif-hmdl-sgrd-*` / `proj-hmdl-vngrs` · `*-hmdl-llsng-*` (monitoring) ·
+`func-hmdl-shld-mcp-*` / `asp-hmdl-shld-*` / `sthmdl<suffix>` (vowels dropped to keep names short; APIM objects keep readable names) · products `avengers-initiative` / `infinity-gauntlet` · users `thor, loki, hulk, black-widow, tony-stark` ·
 tiers `pym` / `stark` / `thanos`.
 
 ---
