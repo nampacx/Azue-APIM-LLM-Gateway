@@ -269,3 +269,11 @@ tiers `pym` / `stark` / `thanos`.
 - 🔑 Send subscription keys in the `api-key` header – keys in the URL (`?subscription-key=`) are rejected with 400.
 - 🧪 Foundry connection (notebook 07) and Agent Framework (notebook 08) use preview SDK/APIs – adjust to current docs if signatures changed.
 - 🔓 This is a demo: public gateway endpoint and subscription keys. Harden (Entra/JWT auth, private endpoints, Key Vault named values) for real use.
+
+---
+
+## 📄 License
+
+Released under the [MIT License](LICENSE), © 2026 Michael Kokonowskyj.
+
+> ⚠️ **Unofficial demo.** The Marvel-inspired names (Heimdall, Bifrost, Avengers, S.H.I.E.L.D. and others) are only a naming theme. This project is not affiliated with or endorsed by Marvel or Disney. Marvel and the character names are trademarks of their owners; the MIT license covers this code only.
